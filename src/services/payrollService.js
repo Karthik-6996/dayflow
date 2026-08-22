@@ -176,22 +176,57 @@ export const payrollService = {
   },
 
   async getAllPayroll() {
-    const list = mockUsers.map(user => {
+    // Get list of removed user IDs from localStorage if available
+    let removedIds = [];
+    try {
+      const stored = localStorage.getItem('dayflow_removed_payroll_ids');
+      if (stored) removedIds = JSON.parse(stored);
+    } catch (e) {}
+
+    // Only include employee roles (not system admins) and filter out explicitly removed/unwanted employees
+    const activeEmployees = mockUsers.filter(u =>
+      u.role === 'employee' && !removedIds.includes(u.id) && !removedIds.includes(u.employee_id)
+    );
+
+    const list = activeEmployees.map(user => {
       const monthly = user.salary ? Math.round(user.salary / 12) : 100000;
       const b = calculateSalaryBreakdown(monthly);
       return {
         user_id: user.id,
-        users: { name: user.name, department: user.department, employee_id: user.employee_id },
+        users: {
+          id: user.id,
+          name: user.name,
+          department: user.department,
+          employee_id: user.employee_id,
+          email: user.email,
+          job_title: user.job_title
+        },
         base_salary: monthly * 12,
         deductions: b.totalDeductions * 12,
         net_salary: b.netTakeHome * 12,
-        monthly_net: b.netTakeHome
+        monthly_net: b.netTakeHome,
+        breakdown: b
       };
     });
     return { data: list, error: null };
+  },
+
+  async removeEmployeeFromPayroll(userId) {
+    try {
+      const stored = localStorage.getItem('dayflow_removed_payroll_ids');
+      const removedIds = stored ? JSON.parse(stored) : [];
+      if (!removedIds.includes(userId)) {
+        removedIds.push(userId);
+        localStorage.setItem('dayflow_removed_payroll_ids', JSON.stringify(removedIds));
+      }
+      return { data: { success: true }, error: null };
+    } catch (e) {
+      return { data: null, error: e.message };
+    }
   },
 
   async updatePayroll(userId, updates) {
     return this.updateSalaryProfile(userId, { monthlyWage: Math.round((updates.base_salary || 90000) / 12) });
   }
 };
+

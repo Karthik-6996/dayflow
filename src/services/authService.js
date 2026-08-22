@@ -156,17 +156,10 @@ export const authService = {
         name: name || email.split('@')[0],
         phone: '',
         address: '',
-        job_title: job_title || (role === 'admin' ? 'HR Administrator' : 'Associate Specialist'),
-        department: department || (role === 'admin' ? 'Human Resources' : 'Operations'),
-        salary: role === 'admin' ? 1800000 : 950000,
-        profile_pic: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name || email)}`,
-        bank_details: {
-          bank_name: "HDFC Bank Ltd",
-          account_no: "50100" + Math.floor(10000000 + Math.random() * 90000000),
-          ifsc: "HDFC0001234",
-          pan: "ABCDE" + Math.floor(1000 + Math.random() * 9000) + "F",
-          uan: "100" + Math.floor(100000000 + Math.random() * 900000000)
-        }
+        job_title: job_title || (role === 'admin' ? 'HR Administrator' : 'Staff Member'),
+        department: department || (role === 'admin' ? 'Human Resources' : 'General'),
+        salary: role === 'admin' ? 1800000 : 900000,
+        profile_pic: null
       };
 
       mockUsers.push(newUser);
@@ -197,9 +190,9 @@ export const authService = {
         email,
         role: role || 'employee',
         name: name || email.split('@')[0],
-        job_title: job_title || (role === 'admin' ? 'HR Administrator' : 'Associate Specialist'),
-        department: department || (role === 'admin' ? 'Human Resources' : 'Operations'),
-        salary: role === 'admin' ? 1800000 : 950000,
+        job_title: job_title || (role === 'admin' ? 'HR Administrator' : 'Staff Member'),
+        department: department || (role === 'admin' ? 'Human Resources' : 'General'),
+        salary: role === 'admin' ? 1800000 : 900000,
         profile_pic: null
       });
       if (insertErr) console.error("Error creating users table profile:", insertErr);

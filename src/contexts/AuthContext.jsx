@@ -78,6 +78,7 @@ export const AuthProvider = ({ children }) => {
     loading,
     login,
     signup,
+    register: signup,
     logout,
     switchPersona,
     updateCurrentUserProfile

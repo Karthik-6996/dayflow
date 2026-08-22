@@ -164,10 +164,10 @@ export async function getAllUsers() {
       .order('name', { ascending: true });
 
     if (error) throw error;
-    if (data && data.length > 0) return { data, error: null };
-    return { data: [...mockUsers], error: null };
+    return { data: data || [], error: null };
   } catch (err) {
-    return { data: [...mockUsers], error: null };
+    console.warn("Supabase getAllUsers error:", err);
+    return { data: [], error: err.message };
   }
 }
 

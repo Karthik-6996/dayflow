@@ -42,6 +42,7 @@ function getMockEmployeeAttendance(userId, startDate, endDate) {
   const stored = getStoredPunches(userId, today);
 
   let filtered = mockAttendance.filter(a => a.user_id === userId);
+<<<<<<< HEAD
   if (filtered.length === 0) {
     // If specific user not found in mock seeds, return default user records mapped to this ID
     filtered = mockAttendance.filter(a => a.user_id === 'usr-001-emp').map(a => ({ ...a, user_id: userId }));
@@ -74,6 +75,8 @@ function getMockEmployeeAttendance(userId, startDate, endDate) {
     }
   }
 
+=======
+>>>>>>> 7228c78208dacbd3d6cedc4238a48cb16280be2a
   if (startDate) filtered = filtered.filter(a => a.date >= startDate);
   if (endDate) filtered = filtered.filter(a => a.date <= endDate);
   filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
