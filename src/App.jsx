@@ -14,6 +14,7 @@ import { SignupPage } from './pages/auth/SignupPage';
 import { VerifyEmailPage } from './pages/auth/VerifyEmailPage';
 
 // Main Application Pages (Odoo Wireframe Modules)
+import { DashboardHome } from './pages/employee/DashboardHome';
 import { EmployeeDirectory } from './pages/admin/EmployeeDirectory';
 import { AttendancePage } from './pages/employee/AttendancePage';
 import { LeavesPage } from './pages/employee/LeavesPage';
@@ -24,6 +25,12 @@ import { AllAttendancePage } from './pages/admin/AllAttendancePage';
 import { LeaveApprovalsPage } from './pages/admin/LeaveApprovalsPage';
 
 import { Toaster } from 'sonner';
+import { useAuth } from './contexts/AuthContext';
+
+function DashboardRedirect() {
+  const { isAdmin } = useAuth();
+  return isAdmin ? <Navigate to="/dashboard/employees" replace /> : <DashboardHome />;
+}
 
 export default function App() {
   return (
@@ -47,9 +54,16 @@ export default function App() {
                 </ProtectedRoute>
               }
             >
-              {/* Odoo Master Navigation Modules */}
-              <Route index element={<Navigate to="/dashboard/employees" replace />} />
-              <Route path="employees" element={<EmployeeDirectory />} />
+              {/* Role-based default landing module */}
+              <Route index element={<DashboardRedirect />} />
+              <Route
+                path="employees"
+                element={
+                  <AdminRoute>
+                    <EmployeeDirectory />
+                  </AdminRoute>
+                }
+              />
               <Route path="attendance" element={<AttendancePage />} />
               <Route path="leaves" element={<LeavesPage />} />
               <Route path="profile" element={<ProfilePage />} />
