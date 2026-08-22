@@ -23,7 +23,7 @@ import {
   AlertCircle,
   Info
 } from 'lucide-react';
-import { format, differenceInMinutes, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from 'date-fns';
+import { format, differenceInMinutes, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, subMonths } from 'date-fns';
 import { toast } from 'sonner';
 import { WORK_MODES, WORK_MODE_LABELS, REGULARIZATION_REASONS } from '../../lib/constants';
 import { getIndianHoliday, isWeekend, getUpcomingIndianHolidays } from '../../lib/indianHolidays';
@@ -54,6 +54,8 @@ export const AttendancePage = () => {
     reason: 'biometric_glitch',
     remarks: ''
   });
+
+  const currentMonthDate = new Date(selectedYear, selectedMonth, 1);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -191,6 +193,12 @@ export const AttendancePage = () => {
   const presentDays = attendanceRecords.filter(r => r.status === 'present').length;
   const lateDays = attendanceRecords.filter(r => r.is_late).length;
   const wfhDays = attendanceRecords.filter(r => r.work_mode === WORK_MODES.WFH).length;
+
+  const isFutureMonth = currentMonthStr > '2026-08';
+  const isPastMonth = currentMonthStr < '2026-08';
+
+  // Planned holidays for the selected year
+  const plannedHolidaysForYear = getPlannedHolidays(selectedYear);
 
   return (
     <div className="space-y-6 animate-fade-in text-zinc-900 dark:text-zinc-100">
@@ -477,6 +485,7 @@ export const AttendancePage = () => {
                 const holiday = getIndianHoliday(dateStr);
                 const record = attendanceRecords.find(a => a.date === dateStr);
                 const isToday = dateStr === todayStr;
+                const isFutureDate = dateStr > todayStr;
 
                 return (
                   <div
