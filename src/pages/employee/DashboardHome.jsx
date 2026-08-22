@@ -157,10 +157,16 @@ export const DashboardHome = () => {
                 type="button"
                 disabled={checkingIn}
                 onClick={async () => {
-                  if (todayAttendance?.id) {
-                    await attendanceService.reopenShift(todayAttendance.id);
-                    toast.success("Shift reopened! You are now Punched In.");
-                    await loadData();
+                  try {
+                    const { error } = await attendanceService.reopenShift(todayAttendance?.id, currentUser?.id);
+                    if (error) {
+                      toast.error(error);
+                    } else {
+                      toast.success("Shift reopened! You are now Punched In.");
+                      await loadData();
+                    }
+                  } catch (err) {
+                    toast.error("Failed to reopen shift");
                   }
                 }}
                 className="px-2.5 py-1 rounded-md bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-medium transition cursor-pointer"

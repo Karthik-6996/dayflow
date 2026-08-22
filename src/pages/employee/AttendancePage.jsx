@@ -130,14 +130,18 @@ export const AttendancePage = () => {
   };
 
   const handleReopenShift = async () => {
-    if (!todayRecord) return;
     setActionLoading(true);
     try {
-      await attendanceService.reopenShift(todayRecord.id);
-      toast.success("Shift resumed! You are now Punched In.");
-      await loadData();
+      const { error } = await attendanceService.reopenShift(todayRecord?.id, currentUser?.id);
+      if (error) {
+        toast.error(error);
+      } else {
+        toast.success("Shift resumed! You are now Punched In.");
+        setIsOnBreak(false);
+        await loadData();
+      }
     } catch (e) {
-      toast.error("Failed to reopen shift");
+      toast.error(e?.message || "Failed to reopen shift");
     } finally {
       setActionLoading(false);
     }
