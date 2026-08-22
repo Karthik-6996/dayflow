@@ -53,7 +53,6 @@ export const AllAttendancePage = () => {
 
   // Admin's own punch console state
   const [adminTodayRecord, setAdminTodayRecord] = useState(null);
-  const [workMode, setWorkMode] = useState(WORK_MODES.OFFICE);
   const [isOnBreak, setIsOnBreak] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -77,7 +76,6 @@ export const AllAttendancePage = () => {
         });
         const todayRec = (adminAtt || []).find(r => r.date === todayStr);
         setAdminTodayRecord(todayRec || null);
-        if (todayRec?.work_mode) setWorkMode(todayRec.work_mode);
       }
 
       // 2. Load Daily Roster
@@ -115,14 +113,14 @@ export const AllAttendancePage = () => {
     setActionLoading(true);
     try {
       const { error } = await attendanceService.checkIn(currentUser.id, {
-        workMode,
+        workMode: WORK_MODES.OFFICE,
         location: 'Bangalore HQ - Admin Suite'
       });
       if (error) {
         toast.error(error);
       } else {
         const nextNum = (adminTodayRecord?.punches?.length || 0) + 1;
-        toast.success(`Admin Punched In for Session #${nextNum} (${WORK_MODE_LABELS[workMode] || workMode})`);
+        toast.success(`Admin Punched In for Session #${nextNum}`);
         setIsOnBreak(false);
         await loadData();
       }
@@ -150,22 +148,6 @@ export const AllAttendancePage = () => {
       toast.error(e?.message || "Failed to punch out");
     } finally {
       setActionLoading(false);
-    }
-  };
-
-  const handleAdminWorkModeChange = async (newMode) => {
-    setWorkMode(newMode);
-    if (adminTodayRecord?.id || currentUser?.id) {
-      setActionLoading(true);
-      try {
-        await attendanceService.updateWorkMode(adminTodayRecord?.id, newMode, currentUser?.id);
-        toast.success(`Work Mode set to ${WORK_MODE_LABELS[newMode] || newMode}`);
-        await loadData();
-      } catch (e) {
-        toast.error("Failed to update work mode");
-      } finally {
-        setActionLoading(false);
-      }
     }
   };
 
@@ -281,47 +263,13 @@ export const AllAttendancePage = () => {
           </div>
         </div>
 
-        {/* Work Mode & Action Buttons */}
+        {/* Action Buttons & Status */}
         <div className="mt-5 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-            {/* Work mode selector */}
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-zinc-500 dark:text-zinc-400 font-medium">Admin Mode:</span>
-              <div className="inline-flex rounded-lg p-0.5 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
-                <button
-                  type="button"
-                  onClick={() => handleAdminWorkModeChange(WORK_MODES.OFFICE)}
-                  className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
-                    workMode === WORK_MODES.OFFICE || workMode === 'office'
-                      ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs font-bold'
-                      : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                  }`}
-                >
-                  <Building className="w-3.5 h-3.5" /> Office
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAdminWorkModeChange(WORK_MODES.WFH)}
-                  className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
-                    workMode === WORK_MODES.WFH || workMode === 'wfh'
-                      ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs font-bold'
-                      : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                  }`}
-                >
-                  <Laptop className="w-3.5 h-3.5" /> WFH
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAdminWorkModeChange(WORK_MODES.ON_DUTY)}
-                  className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
-                    workMode === WORK_MODES.ON_DUTY || workMode === 'on_duty' || workMode === 'client'
-                      ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs font-bold'
-                      : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                  }`}
-                >
-                  <Briefcase className="w-3.5 h-3.5" /> Client
-                </button>
-              </div>
+            <div>
+              <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                Shift Status & Daily Tracking
+              </span>
             </div>
 
             {/* Status chip */}
