@@ -23,6 +23,7 @@ import { PayrollPage } from './pages/employee/PayrollPage';
 import { PayrollManagementPage } from './pages/admin/PayrollManagementPage';
 import { AllAttendancePage } from './pages/admin/AllAttendancePage';
 import { LeaveApprovalsPage } from './pages/admin/LeaveApprovalsPage';
+import { ReportsPage } from './pages/shared/ReportsPage';
 
 import { Toaster } from 'sonner';
 import { useAuth } from './contexts/AuthContext';
@@ -66,8 +67,9 @@ export default function App() {
               />
               <Route path="attendance" element={<AttendancePage />} />
               <Route path="leaves" element={<LeavesPage />} />
-              <Route path="profile" element={<ProfilePage />} />
               <Route path="payroll" element={<PayrollPage />} />
+              <Route path="reports" element={<ReportsPage />} />
+              <Route path="profile" element={<ProfilePage />} />
 
               {/* Admin Privileged Routes */}
               <Route
@@ -99,6 +101,14 @@ export default function App() {
                 element={
                   <AdminRoute>
                     <PayrollManagementPage />
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="admin/reports"
+                element={
+                  <AdminRoute>
+                    <ReportsPage />
                   </AdminRoute>
                 }
               />

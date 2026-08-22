@@ -66,6 +66,13 @@ export const PayrollPage = () => {
             View your salary slip and net monthly take-home earnings
           </p>
         </div>
+
+        <a
+          href="/dashboard/reports"
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-zinc-900 dark:bg-white hover:bg-zinc-800 dark:hover:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-semibold transition cursor-pointer self-start sm:self-auto shadow-xs"
+        >
+          <CreditCard className="w-3.5 h-3.5" /> View Formal Slip & Reports
+        </a>
       </div>
 
       {/* Overview Cards */}
