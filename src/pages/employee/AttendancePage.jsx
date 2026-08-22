@@ -244,6 +244,21 @@ export const AttendancePage = () => {
     }
   };
 
+  // Format individual record duration for table logs
+  const calcDurationFormatted = (checkIn, checkOut, breakMins = 0) => {
+    if (!checkIn) return '—';
+    if (!checkOut) return 'In-Progress';
+    try {
+      const total = differenceInMinutes(parseISO(checkOut), parseISO(checkIn));
+      const net = Math.max(0, total - (breakMins || 0));
+      const h = Math.floor(net / 60);
+      const m = net % 60;
+      return `${h}h ${m}m`;
+    } catch (e) {
+      return '—';
+    }
+  };
+
   // Helper calculation for duration across multiple sessions today
   const calcTotalDayDuration = (record, now, additionalBreaks = 0) => {
     if (!record || (!record.check_in_time && (!record.punches || record.punches.length === 0))) {
