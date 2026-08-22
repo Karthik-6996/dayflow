@@ -69,6 +69,10 @@ export const AuthProvider = ({ children }) => {
     setCurrentUser(prev => prev ? { ...prev, ...updatedFields } : prev);
   };
 
+  const resetPassword = async (email) => {
+    return await authService.resetPassword(email);
+  };
+
   const value = {
     currentUser,
     role: currentUser?.role || 'employee',
@@ -79,6 +83,7 @@ export const AuthProvider = ({ children }) => {
     login,
     signup,
     register: signup,
+    resetPassword,
     logout,
     switchPersona,
     updateCurrentUserProfile
