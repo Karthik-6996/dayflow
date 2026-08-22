@@ -3,19 +3,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { userService, changeUserPassword } from '../../services/userService';
-<<<<<<< Updated upstream
-=======
-import { payrollService } from '../../services/payrollService';
->>>>>>> Stashed changes
 import { Card, CardHeader } from '../../components/ui/Card';
 import { Avatar } from '../../components/ui/Avatar';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
-<<<<<<< Updated upstream
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../components/ui/Table';
-=======
->>>>>>> Stashed changes
 import {
   User,
   Mail,
@@ -34,7 +27,6 @@ import {
   Briefcase,
   Download,
   Upload,
-<<<<<<< Updated upstream
   Camera,
   MapPin,
   Image as ImageIcon,
@@ -53,19 +45,6 @@ const AVATAR_PRESETS = [
 ];
 
 // Country code options
-=======
-  Eye,
-  FileSpreadsheet,
-  Globe,
-  Camera,
-  MapPin,
-  Calendar,
-  CreditCard
-} from 'lucide-react';
-import { toast } from 'sonner';
-
-// Country Phone Prefix Options
->>>>>>> Stashed changes
 const COUNTRY_PHONE_CODES = [
   { code: '+91', country: 'India (Default)', placeholder: '98765 43210' },
   { code: '+1', country: 'United States / Canada', placeholder: '(555) 234-5678' },
@@ -86,7 +65,6 @@ export const ProfilePage = () => {
   const [activeTab, setActiveTab] = useState(targetTab);
   const [loading, setLoading] = useState(true);
 
-<<<<<<< Updated upstream
   // Edit Profile Details Modal State
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -104,19 +82,6 @@ export const ProfilePage = () => {
   const [editProfilePic, setEditProfilePic] = useState('');
 
   // Admin editable fields
-=======
-  // Edit Modal State
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  // Employee editable personal fields
-  const [editCountryCode, setEditCountryCode] = useState('+91');
-  const [editPhone, setEditPhone] = useState('');
-  const [editAddress, setEditAddress] = useState('');
-  const [editProfilePic, setEditProfilePic] = useState('');
-
-  // Admin editable fields (for full HR override)
->>>>>>> Stashed changes
   const [adminEditName, setAdminEditName] = useState('');
   const [adminEditJobTitle, setAdminEditJobTitle] = useState('');
   const [adminEditDepartment, setAdminEditDepartment] = useState('');
@@ -162,7 +127,6 @@ export const ProfilePage = () => {
     };
     loadUser();
   }, [targetUserId, currentUser]);
-<<<<<<< Updated upstream
 
   // Sync state with profileUser
   useEffect(() => {
@@ -177,7 +141,7 @@ export const ProfilePage = () => {
         setEditPhone(rawPhone.replace('+91', '').trim() || '98765 43210');
       }
 
-      setEditAddress(profileUser.address || '742 Evergreen Terrace, Springfield');
+      setEditAddress(profileUser.address || 'Flat 402, Whitefield, Bengaluru');
       setEditProfilePic(profileUser.profile_pic || '');
       setSelectedPhoto(profileUser.profile_pic || '');
       setPhotoUrlInput(profileUser.profile_pic || '');
@@ -193,7 +157,7 @@ export const ProfilePage = () => {
   const isViewingSelf = !targetUserId || targetUserId === currentUser?.id;
   const canAdminEdit = isAdmin;
 
-  // Handle Local File Upload for Profile Picture
+  // Handle Local Image Upload for Profile Picture
   const handleLocalImageUpload = (e) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -222,86 +186,22 @@ export const ProfilePage = () => {
     setSaving(true);
     try {
       const updates = { profile_pic: photoToSave };
-=======
-
-  // Populate Edit States
-  useEffect(() => {
-    if (profileUser) {
-      // Extract country code if present
-      const rawPhone = profileUser.phone || '';
-      const matched = COUNTRY_PHONE_CODES.find(c => rawPhone.startsWith(c.code));
-      if (matched) {
-        setEditCountryCode(matched.code);
-        setEditPhone(rawPhone.replace(matched.code, '').trim());
-      } else {
-        setEditCountryCode('+91');
-        setEditPhone(rawPhone.replace('+91', '').trim() || '98765 43210');
-      }
-
-      setEditAddress(profileUser.address || '742 Evergreen Terrace, Springfield');
-      setEditProfilePic(profileUser.profile_pic || '');
-
-      // Admin fields
-      setAdminEditName(profileUser.name || '');
-      setAdminEditJobTitle(profileUser.job_title || 'Software Engineer');
-      setAdminEditDepartment(profileUser.department || 'Engineering');
-      setAdminEditRole(profileUser.role || 'employee');
-      setAdminEditSalary(profileUser.salary || 1450000);
-    }
-  }, [profileUser]);
-
-  const isViewingSelf = !targetUserId || targetUserId === currentUser?.id;
-  const canAdminEdit = isAdmin;
-
-  // Handle Save Profile Changes
-  const handleSaveProfile = async (e) => {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      const fullPhone = `${editCountryCode} ${editPhone}`.trim();
-
-      const updates = {
-        phone: fullPhone,
-        address: editAddress,
-        profile_pic: editProfilePic
-      };
-
-      // If Admin is editing, include administrative fields
-      if (canAdminEdit) {
-        updates.name = adminEditName;
-        updates.job_title = adminEditJobTitle;
-        updates.department = adminEditDepartment;
-        updates.role = adminEditRole;
-        updates.salary = Number(adminEditSalary) || profileUser.salary;
-      }
-
->>>>>>> Stashed changes
       const { data, error } = await userService.updateUser(profileUser.id, updates);
       if (error) {
         toast.error(error);
       } else {
-<<<<<<< Updated upstream
         setProfileUser(prev => ({ ...prev, profile_pic: photoToSave }));
         if (isViewingSelf) {
           updateCurrentUserProfile(updates);
         }
         toast.success("Profile picture updated successfully!");
         setIsPhotoModalOpen(false);
-=======
-        setProfileUser(data);
-        if (isViewingSelf) {
-          updateCurrentUserProfile(updates);
-        }
-        toast.success("Profile records saved successfully!");
-        setIsEditModalOpen(false);
->>>>>>> Stashed changes
       }
     } finally {
       setSaving(false);
     }
   };
 
-<<<<<<< Updated upstream
   // Save General Profile Details
   const handleSaveProfile = async (e) => {
     e.preventDefault();
@@ -338,8 +238,6 @@ export const ProfilePage = () => {
     }
   };
 
-=======
->>>>>>> Stashed changes
   // Handle Password Change
   const handlePasswordChange = async (e) => {
     e.preventDefault();
@@ -390,10 +288,6 @@ export const ProfilePage = () => {
     toast.success(`Downloading ${docName}...`);
   };
 
-<<<<<<< Updated upstream
-=======
-  // Monthly payslips list
->>>>>>> Stashed changes
   const payslips = [
     { month: 'August 2026', gross: '₹1,20,833', deductions: '₹25,383', net: '₹95,450', status: 'Paid', date: '2026-08-20' },
     { month: 'July 2026', gross: '₹1,20,833', deductions: '₹25,383', net: '₹95,450', status: 'Paid', date: '2026-07-20' },
@@ -402,30 +296,21 @@ export const ProfilePage = () => {
   ];
 
   return (
-<<<<<<< Updated upstream
     <div className="space-y-6 animate-fade-in text-zinc-900 dark:text-zinc-100 max-w-7xl mx-auto">
-=======
-    <div className="space-y-6 animate-fade-in text-zinc-900 dark:text-zinc-100">
->>>>>>> Stashed changes
       {/* ─────────────────────────────────────────────────────────────
           1. TOP PROFILE HEADER & ACTIONS
       ───────────────────────────────────────────────────────────── */}
       <Card className="p-6">
         <div className="flex flex-col md:flex-row items-center md:items-start justify-between gap-6">
           <div className="flex flex-col sm:flex-row items-center gap-5 text-center sm:text-left">
-<<<<<<< Updated upstream
             {/* Interactive Avatar with Camera Upload Badge */}
             <div className="relative group cursor-pointer" onClick={() => setIsPhotoModalOpen(true)}>
-=======
-            <div className="relative group">
->>>>>>> Stashed changes
               <Avatar
                 src={profileUser?.profile_pic}
                 name={profileUser?.name}
                 size="xl"
                 role={profileUser?.role}
               />
-<<<<<<< Updated upstream
               <div
                 className="absolute inset-0 bg-black/40 rounded-full flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
                 title="Click to change profile picture"
@@ -443,14 +328,6 @@ export const ProfilePage = () => {
                 title="Upload Profile Picture"
               >
                 <Camera className="w-4 h-4" />
-=======
-              <button
-                onClick={() => setIsEditModalOpen(true)}
-                className="absolute bottom-0 right-0 p-1.5 rounded-full bg-teal-600 text-white shadow-md hover:bg-teal-700 transition cursor-pointer"
-                title="Update Profile Photo"
-              >
-                <Camera className="w-3.5 h-3.5" />
->>>>>>> Stashed changes
               </button>
             </div>
 
@@ -482,7 +359,6 @@ export const ProfilePage = () => {
             </div>
           </div>
 
-<<<<<<< Updated upstream
           {/* Action Buttons */}
           <div className="flex items-center gap-2">
             <Button
@@ -503,18 +379,6 @@ export const ProfilePage = () => {
               {canAdminEdit && !isViewingSelf ? 'Edit Employee (Admin)' : 'Edit Details'}
             </Button>
           </div>
-=======
-          {/* Edit Button */}
-          <Button
-            variant="primary"
-            size="md"
-            icon={User}
-            onClick={() => setIsEditModalOpen(true)}
-            className="bg-teal-600 hover:bg-teal-700 font-semibold"
-          >
-            {canAdminEdit && !isViewingSelf ? 'Edit Employee (Admin)' : 'Edit Allowed Details'}
-          </Button>
->>>>>>> Stashed changes
         </div>
       </Card>
 
@@ -582,18 +446,12 @@ export const ProfilePage = () => {
               <h3 className="text-sm font-bold text-zinc-900 dark:text-white flex items-center gap-2">
                 <User className="w-4 h-4 text-teal-600" /> Personal Details
               </h3>
-<<<<<<< Updated upstream
               <button
                 onClick={() => setIsEditModalOpen(true)}
                 className="text-[11px] font-bold text-teal-600 hover:text-teal-700 cursor-pointer"
               >
                 Edit Info
               </button>
-=======
-              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded">
-                Editable by Employee
-              </span>
->>>>>>> Stashed changes
             </div>
 
             <div className="space-y-3 text-xs">
@@ -628,11 +486,7 @@ export const ProfilePage = () => {
             </div>
           </Card>
 
-<<<<<<< Updated upstream
           {/* Job Details Card */}
-=======
-          {/* Job & Administrative Details Card */}
->>>>>>> Stashed changes
           <Card className="p-6 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800">
               <h3 className="text-sm font-bold text-zinc-900 dark:text-white flex items-center gap-2">
@@ -706,10 +560,6 @@ export const ProfilePage = () => {
             </div>
           </div>
 
-<<<<<<< Updated upstream
-=======
-          {/* Salary Component Items */}
->>>>>>> Stashed changes
           <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden text-xs">
             <div className="grid grid-cols-3 bg-zinc-100 dark:bg-zinc-800 py-2.5 px-4 font-bold text-zinc-700 dark:text-zinc-300">
               <span>Salary Component</span>
@@ -752,10 +602,6 @@ export const ProfilePage = () => {
       ───────────────────────────────────────────────────────────── */}
       {activeTab === 'documents' && (
         <div className="space-y-6">
-<<<<<<< Updated upstream
-=======
-          {/* Monthly Payslips Card */}
->>>>>>> Stashed changes
           <Card className="p-6">
             <CardHeader
               title="Official Monthly Payslips"
@@ -797,10 +643,6 @@ export const ProfilePage = () => {
             </Table>
           </Card>
 
-<<<<<<< Updated upstream
-=======
-          {/* Employee Documents & Identity Proofs */}
->>>>>>> Stashed changes
           <Card className="p-6">
             <div className="flex items-center justify-between pb-3 mb-4 border-b border-zinc-100 dark:border-zinc-800">
               <div>
@@ -896,7 +738,6 @@ export const ProfilePage = () => {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-<<<<<<< Updated upstream
           MODAL 1: UPLOAD / EDIT PROFILE PICTURE
       ───────────────────────────────────────────────────────────── */}
       <Modal
@@ -1017,9 +858,6 @@ export const ProfilePage = () => {
 
       {/* ─────────────────────────────────────────────────────────────
           MODAL 2: EDIT EMPLOYEE PERSONAL DETAILS
-=======
-          MODAL: EDIT EMPLOYEE PROFILE
->>>>>>> Stashed changes
       ───────────────────────────────────────────────────────────── */}
       <Modal
         isOpen={isEditModalOpen}
@@ -1032,7 +870,6 @@ export const ProfilePage = () => {
         }
       >
         <form onSubmit={handleSaveProfile} className="space-y-4 text-xs">
-<<<<<<< Updated upstream
           {/* Profile Picture in Edit Modal */}
           <div>
             <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
@@ -1062,23 +899,6 @@ export const ProfilePage = () => {
           </div>
 
           {/* Contact Phone with Country Dropdown */}
-=======
-          {/* Profile Picture URL */}
-          <div>
-            <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-              Profile Picture URL
-            </label>
-            <input
-              type="url"
-              value={editProfilePic}
-              onChange={(e) => setEditProfilePic(e.target.value)}
-              placeholder="https://images.unsplash.com/..."
-              className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-sm focus:border-teal-600"
-            />
-          </div>
-
-          {/* Contact Phone with Indian Standard Default + Country Dropdown */}
->>>>>>> Stashed changes
           <div>
             <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
               Contact Phone Number (Indian Standard by Default) *
@@ -1201,11 +1021,7 @@ export const ProfilePage = () => {
       </Modal>
 
       {/* ─────────────────────────────────────────────────────────────
-<<<<<<< Updated upstream
           MODAL 3: UPLOAD DOCUMENT
-=======
-          MODAL: UPLOAD DOCUMENT
->>>>>>> Stashed changes
       ───────────────────────────────────────────────────────────── */}
       <Modal
         isOpen={isUploadDocOpen}
