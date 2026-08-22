@@ -24,6 +24,12 @@ import { AllAttendancePage } from './pages/admin/AllAttendancePage';
 import { LeaveApprovalsPage } from './pages/admin/LeaveApprovalsPage';
 
 import { Toaster } from 'sonner';
+import { useAuth } from './contexts/AuthContext';
+
+function DashboardRedirect() {
+  const { isAdmin } = useAuth();
+  return <Navigate to={isAdmin ? "/dashboard/employees" : "/dashboard/attendance"} replace />;
+}
 
 export default function App() {
   return (
@@ -47,9 +53,16 @@ export default function App() {
                 </ProtectedRoute>
               }
             >
-              {/* Odoo Master Navigation Modules */}
-              <Route index element={<Navigate to="/dashboard/employees" replace />} />
-              <Route path="employees" element={<EmployeeDirectory />} />
+              {/* Role-based default landing module */}
+              <Route index element={<DashboardRedirect />} />
+              <Route
+                path="employees"
+                element={
+                  <AdminRoute>
+                    <EmployeeDirectory />
+                  </AdminRoute>
+                }
+              />
               <Route path="attendance" element={<AttendancePage />} />
               <Route path="leaves" element={<LeavesPage />} />
               <Route path="profile" element={<ProfilePage />} />

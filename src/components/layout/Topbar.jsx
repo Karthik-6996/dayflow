@@ -65,18 +65,20 @@ export const Topbar = ({ onMenuClick }) => {
           </div>
         </Link>
 
-        {/* Center / Navigation Menu (Odoo Wireframe Style) */}
+        {/* Center / Navigation Menu (Role-Aware) */}
         <nav className="hidden md:flex items-center gap-1 pl-4 border-l border-zinc-200 dark:border-zinc-800">
-          <NavLink
-            to="/dashboard/employees"
-            className={({ isActive }) => `
-              px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5
-              ${isActive ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white font-semibold' : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800/50'}
-            `}
-          >
-            <Users className="w-3.5 h-3.5" />
-            Employees
-          </NavLink>
+          {isAdmin && (
+            <NavLink
+              to="/dashboard/employees"
+              className={({ isActive }) => `
+                px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5
+                ${isActive ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white font-semibold' : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-800/50'}
+              `}
+            >
+              <Users className="w-3.5 h-3.5" />
+              Employees
+            </NavLink>
+          )}
 
           <NavLink
             to="/dashboard/attendance"
