@@ -1,24 +1,111 @@
-/**
- * Dayflow — User Service
- *
- * Supabase queries for user/employee data (admin dashboard).
- */
+// src/services/userService.js
+import { supabase, IS_MOCK } from './supabaseClient';
+import { mockUsers } from '../mocks/users';
+import { validateRow } from '../lib/schema.js';
 
-import { supabase } from './supabaseClient.js';
+export async function getUser(userId) {
+  if (IS_MOCK) {
+    const user = mockUsers.find(u => u.id === userId);
+    return { data: user || null, error: user ? null : 'User not found' };
+  }
 
-/**
- * Fetch all employees (admin view).
- *
- * @param {Object} [filters]
- * @param {string} [filters.department] - Filter by department
- * @param {string} [filters.search] - Search by name or email
- * @returns {Promise<{ data: Object[]|null, error: string|null }>}
- */
-export async function getAllEmployees(filters = {}) {
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', userId)
+    .single();
+
+  return { data, error: error?.message || null };
+}
+
+export const getEmployeeById = getUser;
+
+export async function createEmployee(newEmployeeData) {
+  const employeeId = newEmployeeData.employee_id?.trim() || `DF-${Math.floor(1000 + Math.random() * 9000)}`;
+
+  if (IS_MOCK) {
+    const created = {
+      id: `usr-${Date.now()}`,
+      employee_id: employeeId,
+      email: newEmployeeData.email,
+      role: newEmployeeData.role || 'employee',
+      name: newEmployeeData.name,
+      phone: newEmployeeData.phone || '',
+      address: newEmployeeData.address || '',
+      job_title: newEmployeeData.job_title || 'Specialist',
+      department: newEmployeeData.department || 'Operations',
+      salary: Number(newEmployeeData.salary) || 65000,
+      profile_pic: `https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=256&auto=format&fit=crop&q=80`
+    };
+
+    mockUsers.unshift(created);
+    return { data: created, error: null };
+  }
+
+  const { data, error } = await supabase
+    .from('users')
+    .insert({
+      employee_id: employeeId,
+      email: newEmployeeData.email,
+      role: newEmployeeData.role || 'employee',
+      name: newEmployeeData.name,
+      phone: newEmployeeData.phone || null,
+      address: newEmployeeData.address || null,
+      job_title: newEmployeeData.job_title || 'Specialist',
+      department: newEmployeeData.department || 'Operations',
+      salary: Number(newEmployeeData.salary) || 65000,
+    })
+    .select()
+    .single();
+
+  return { data, error: error?.message || null };
+}
+
+export async function updateUser(userId, updates) {
+  if (IS_MOCK) {
+    const idx = mockUsers.findIndex(u => u.id === userId);
+    if (idx === -1) return { data: null, error: 'User not found' };
+    
+    mockUsers[idx] = {
+      ...mockUsers[idx],
+      ...updates
+    };
+    
+    const currentUser = JSON.parse(localStorage.getItem('dayflow_auth_user') || '{}');
+    if (currentUser.id === userId) {
+      localStorage.setItem('dayflow_auth_user', JSON.stringify(mockUsers[idx]));
+    }
+
+    return { data: mockUsers[idx], error: null };
+  }
+
+  const { data, error } = await supabase
+    .from('users')
+    .update(updates)
+    .eq('id', userId)
+    .select()
+    .single();
+
+  return { data, error: error?.message || null };
+}
+
+export async function getAllUsers(filters = {}) {
+  if (IS_MOCK) {
+    let result = [...mockUsers];
+    if (filters.department) {
+      result = result.filter(u => u.department === filters.department);
+    }
+    if (filters.search) {
+      const q = filters.search.toLowerCase();
+      result = result.filter(u => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
+    }
+    return { data: result, error: null };
+  }
+
   let query = supabase
     .from('users')
-    .select('id, employee_id, name, email, department, job_title, role, profile_pic')
-    .order('name', { ascending: true });
+    .select('*')
+    .order('name');
 
   if (filters.department) {
     query = query.eq('department', filters.department);
@@ -31,28 +118,14 @@ export async function getAllEmployees(filters = {}) {
   return { data, error: error?.message || null };
 }
 
-/**
- * Fetch a single employee's full profile.
- *
- * @param {string} userId
- * @returns {Promise<{ data: Object|null, error: string|null }>}
- */
-export async function getEmployeeById(userId) {
-  const { data, error } = await supabase
-    .from('users')
-    .select('*')
-    .eq('id', userId)
-    .single();
+export const getAllEmployees = getAllUsers;
 
-  return { data, error: error?.message || null };
-}
-
-/**
- * Get distinct departments from the users table (for filters).
- *
- * @returns {Promise<{ data: string[]|null, error: string|null }>}
- */
 export async function getDepartments() {
+  if (IS_MOCK) {
+    const unique = [...new Set(mockUsers.map(u => u.department).filter(Boolean))];
+    return { data: unique, error: null };
+  }
+
   const { data, error } = await supabase
     .from('users')
     .select('department')
@@ -63,3 +136,14 @@ export async function getDepartments() {
   const unique = [...new Set(data.map((d) => d.department).filter(Boolean))];
   return { data: unique, error: null };
 }
+
+export const userService = {
+  getUser,
+  getEmployeeById,
+  createEmployee,
+  updateUser,
+  getAllUsers,
+  getAllEmployees,
+  getDepartments,
+  validate: (userData) => validateRow('users', userData)
+};
