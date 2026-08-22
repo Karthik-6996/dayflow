@@ -9,6 +9,8 @@ import { StatCard } from '../../components/ui/StatCard';
 import { attendanceService } from '../../services/attendanceService';
 import { leaveService } from '../../services/leaveService';
 import { payrollService } from '../../services/payrollService';
+import { getUpcomingIndianHolidays } from '../../lib/indianHolidays';
+import { WORK_MODES, WORK_MODE_LABELS } from '../../lib/constants';
 import {
   CalendarCheck,
   CalendarDays,
@@ -23,9 +25,11 @@ import {
   Calendar,
   Sparkles,
   Plane,
-  FileText
+  FileText,
+  Building,
+  Laptop
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 
 export const DashboardHome = () => {
   const { currentUser, isAdmin } = useAuth();
@@ -34,6 +38,7 @@ export const DashboardHome = () => {
   const [payroll, setPayroll] = useState(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [checkingIn, setCheckingIn] = useState(false);
+  const [workMode, setWorkMode] = useState(WORK_MODES?.OFFICE || 'office');
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -64,7 +69,7 @@ export const DashboardHome = () => {
   const handleQuickCheckIn = async () => {
     setCheckingIn(true);
     try {
-      await attendanceService.checkIn(currentUser.id);
+      await attendanceService.checkIn(currentUser.id, { workMode });
       await loadData();
     } finally {
       setCheckingIn(false);
@@ -84,11 +89,12 @@ export const DashboardHome = () => {
 
   const isCheckedIn = !!todayAttendance?.check_in_time;
   const isCheckedOut = !!todayAttendance?.check_out_time;
+  const upcomingIndianHolidays = getUpcomingIndianHolidays ? getUpcomingIndianHolidays(new Date().toISOString().split('T')[0], 3) : [];
 
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Welcome Banner */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-teal-950 to-slate-900 text-white p-6 sm:p-8 shadow-xl border border-slate-800">
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-950 via-teal-950 to-slate-900 text-white p-6 sm:p-8 shadow-xl border border-slate-800">
         <div className="absolute top-0 right-0 w-96 h-96 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
@@ -96,12 +102,13 @@ export const DashboardHome = () => {
               <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30">
                 {currentUser?.department || 'Operations'} Team
               </span>
-              <span className="text-xs text-slate-400">
-                {format(currentTime, 'EEEE, MMMM dd, yyyy')}
+              <span className="text-xs text-slate-300 flex items-center gap-1 font-medium">
+                <Clock className="w-3 h-3 text-teal-400" />
+                {format(currentTime, 'EEEE, dd MMMM yyyy')}
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              Good day, {currentUser?.name?.split(' ')[0]} 👋
+              Welcome, {currentUser?.name?.split(' ')[0]} 👋
             </h1>
             <p className="text-sm text-slate-300 mt-1 max-w-xl">
               Welcome to your personal Dayflow hub. Review your daily attendance status, leave requests, and payroll summary.
@@ -109,25 +116,37 @@ export const DashboardHome = () => {
           </div>
 
           {/* Quick punch in banner widget */}
-          <div className="flex items-center gap-3 bg-slate-950/60 backdrop-blur-md p-3.5 rounded-2xl border border-slate-800 shrink-0">
-            <div className="text-right">
+          <div className="flex flex-col sm:flex-row items-center gap-3 bg-slate-950/70 backdrop-blur-md p-3.5 rounded-2xl border border-slate-800 shrink-0">
+            <div className="text-right sm:text-left">
               <div className="text-lg font-mono font-bold text-teal-400">
                 {format(currentTime, 'hh:mm:ss a')}
               </div>
               <p className="text-[10px] text-slate-400">
-                {isCheckedOut ? 'Checked Out for Today' : isCheckedIn ? 'Checked In Active' : 'Not Checked In Yet'}
+                {isCheckedOut ? 'Shift Completed' : isCheckedIn ? `Checked In (${todayAttendance?.work_mode || 'Office'})` : 'Punch In Pending'}
               </p>
             </div>
+
             {!isCheckedIn ? (
-              <Button
-                variant="primary"
-                size="sm"
-                loading={checkingIn}
-                onClick={handleQuickCheckIn}
-                className="bg-emerald-600 hover:bg-emerald-700 font-bold"
-              >
-                Check In
-              </Button>
+              <div className="flex items-center gap-1.5">
+                <select
+                  value={workMode}
+                  onChange={(e) => setWorkMode(e.target.value)}
+                  className="bg-slate-900 text-teal-200 text-xs px-2 py-1.5 rounded-lg border border-slate-700 focus:outline-none"
+                >
+                  <option value={WORK_MODES?.OFFICE || 'office'}>🏢 Office</option>
+                  <option value={WORK_MODES?.WFH || 'wfh'}>🏠 WFH</option>
+                  <option value={WORK_MODES?.ON_DUTY || 'on_duty'}>💼 On-Duty</option>
+                </select>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={checkingIn}
+                  onClick={handleQuickCheckIn}
+                  className="bg-emerald-600 hover:bg-emerald-700 font-bold"
+                >
+                  Check In
+                </Button>
+              </div>
             ) : !isCheckedOut ? (
               <Button
                 variant="secondary"
@@ -139,7 +158,7 @@ export const DashboardHome = () => {
                 Check Out
               </Button>
             ) : (
-              <Badge variant="present" size="md">Done</Badge>
+              <Badge variant="present" size="md">Completed</Badge>
             )}
           </div>
         </div>
@@ -149,7 +168,7 @@ export const DashboardHome = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         <StatCard
           title="Today's Attendance"
-          value={isCheckedOut ? 'Completed' : isCheckedIn ? 'Checked In' : 'Pending'}
+          value={isCheckedOut ? 'Completed' : isCheckedIn ? 'Present (Active)' : 'Pending'}
           subtitle={todayAttendance?.check_in_time ? `Since ${format(new Date(todayAttendance.check_in_time), 'hh:mm a')}` : 'Action required'}
           icon={CalendarCheck}
           color={isCheckedIn ? 'emerald' : 'amber'}
@@ -274,33 +293,42 @@ export const DashboardHome = () => {
               subtitle="Official corporate calendar 2026"
             />
             <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-teal-50 text-teal-700 font-bold text-center flex flex-col items-center justify-center border border-teal-100">
-                    <span className="text-[9px] uppercase leading-none">Sep</span>
-                    <span className="text-sm leading-none font-extrabold mt-0.5">07</span>
+              {upcomingIndianHolidays.length > 0 ? (
+                upcomingIndianHolidays.map((holiday) => {
+                  const dateObj = parseISO(holiday.date);
+                  return (
+                    <div key={holiday.date} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-teal-50 text-teal-800 font-bold text-center flex flex-col items-center justify-center border border-teal-100 shrink-0">
+                          <span className="text-[9px] uppercase leading-none font-bold">{format(dateObj, 'MMM')}</span>
+                          <span className="text-sm leading-none font-extrabold mt-0.5">{format(dateObj, 'dd')}</span>
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-slate-900">{holiday.name}</p>
+                          <p className="text-[11px] text-slate-500">{holiday.isNational ? 'National Holiday' : 'Corporate Holiday'}</p>
+                        </div>
+                      </div>
+                      <span className="text-xs font-semibold text-teal-700 shrink-0">
+                        {format(dateObj, 'EEEE')}
+                      </span>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-teal-50 text-teal-700 font-bold text-center flex flex-col items-center justify-center border border-teal-100">
+                      <span className="text-[9px] uppercase leading-none">Sep</span>
+                      <span className="text-sm leading-none font-extrabold mt-0.5">07</span>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-900">Labor Day Observance</p>
+                      <p className="text-[11px] text-slate-500">Paid Public Holiday</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-900">Labor Day Observance</p>
-                    <p className="text-[11px] text-slate-500">Paid Public Holiday</p>
-                  </div>
+                  <span className="text-xs font-semibold text-teal-600">Upcoming</span>
                 </div>
-                <span className="text-xs font-semibold text-teal-600">In 16 days</span>
-              </div>
-
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-teal-50 text-teal-700 font-bold text-center flex flex-col items-center justify-center border border-teal-100">
-                    <span className="text-[9px] uppercase leading-none">Oct</span>
-                    <span className="text-sm leading-none font-extrabold mt-0.5">12</span>
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-900">Indigenous Peoples' Day</p>
-                    <p className="text-[11px] text-slate-500">Corporate Holiday</p>
-                  </div>
-                </div>
-                <span className="text-xs font-semibold text-slate-400">In 51 days</span>
-              </div>
+              )}
             </div>
           </Card>
 

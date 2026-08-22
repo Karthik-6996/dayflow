@@ -42,7 +42,7 @@ export const mockUsers = [
     profile_pic: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=256&auto=format&fit=crop&q=80"
   },
   {
-    id: "usr-003-emp",
+    id: "usr-004-emp",
     employee_id: "DF-1003",
     email: "marcus.chen@dayflow.internal",
     role: "employee",
@@ -55,7 +55,7 @@ export const mockUsers = [
     profile_pic: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=256&auto=format&fit=crop&q=80"
   },
   {
-    id: "usr-004-emp",
+    id: "usr-005-emp",
     employee_id: "DF-1004",
     email: "priya.sharma@dayflow.internal",
     role: "employee",
@@ -68,7 +68,7 @@ export const mockUsers = [
     profile_pic: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=256&auto=format&fit=crop&q=80"
   },
   {
-    id: "usr-005-emp",
+    id: "usr-006-emp",
     employee_id: "DF-1005",
     email: "david.kim@dayflow.internal",
     role: "employee",
@@ -81,7 +81,7 @@ export const mockUsers = [
     profile_pic: "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=256&auto=format&fit=crop&q=80"
   },
   {
-    id: "usr-006-adm",
+    id: "usr-007-adm",
     employee_id: "DF-1006",
     email: "elena.rostova@dayflow.internal",
     role: "admin",

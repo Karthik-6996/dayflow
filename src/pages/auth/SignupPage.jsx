@@ -166,4 +166,3 @@ export const SignupPage = () => {
     </div>
   );
 };
-
