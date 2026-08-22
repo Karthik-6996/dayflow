@@ -8,6 +8,7 @@ import { DashboardLayout } from './components/layout/DashboardLayout';
 
 // Auth Pages
 import { LoginPage } from './pages/auth/LoginPage';
+import { AdminLoginPage } from './pages/auth/AdminLoginPage';
 import { SignupPage } from './pages/auth/SignupPage';
 import { VerifyEmailPage } from './pages/auth/VerifyEmailPage';
 
@@ -34,6 +35,7 @@ export default function App() {
         <Routes>
           {/* Public Auth Routes */}
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/admin/login" element={<AdminLoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
 

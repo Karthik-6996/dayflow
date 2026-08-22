@@ -9,16 +9,31 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Initialize session from storage or mock
-    const user = authService.getCurrentUser();
-    setCurrentUser(user);
-    setLoading(false);
+    let mounted = true;
+
+    async function initAuth() {
+      const user = await authService.getCurrentUser();
+      if (!mounted) return;
+      setCurrentUser(user);
+      setLoading(false);
+    }
+
+    initAuth();
+
+    const subscription = authService.onAuthStateChange((user) => {
+      if (mounted) setCurrentUser(user);
+    });
+
+    return () => {
+      mounted = false;
+      subscription?.unsubscribe();
+    };
   }, []);
 
-  const login = async (email, password) => {
+  const login = async (email, password, requiredRole = null) => {
     setLoading(true);
     try {
-      const { user, error } = await authService.signIn({ email, password });
+      const { user, error } = await authService.signIn({ email, password, requiredRole });
       if (error) throw error;
       setCurrentUser(user);
       return user;
@@ -30,10 +45,11 @@ export const AuthProvider = ({ children }) => {
   const signup = async (formData) => {
     setLoading(true);
     try {
-      const { user, error } = await authService.signUp(formData);
+      const result = await authService.signUp(formData);
+      const { user, error } = result;
       if (error) throw error;
-      setCurrentUser(user);
-      return user;
+      if (user && !result.needsEmailVerification) setCurrentUser(user);
+      return result;
     } finally {
       setLoading(false);
     }
@@ -46,7 +62,7 @@ export const AuthProvider = ({ children }) => {
 
   const switchPersona = (roleOrId) => {
     const user = authService.switchPersona(roleOrId);
-    setCurrentUser({ ...user });
+    if (user) setCurrentUser({ ...user });
   };
 
   const updateCurrentUserProfile = (updatedFields) => {
@@ -58,6 +74,7 @@ export const AuthProvider = ({ children }) => {
     role: currentUser?.role || 'employee',
     isAdmin: currentUser?.role === 'admin',
     isEmployee: currentUser?.role === 'employee',
+    isMockMode: authService.isMockMode(),
     loading,
     login,
     signup,

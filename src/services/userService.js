@@ -20,6 +20,47 @@ export async function getUser(userId) {
 
 export const getEmployeeById = getUser;
 
+export async function createEmployee(newEmployeeData) {
+  const employeeId = newEmployeeData.employee_id?.trim() || `DF-${Math.floor(1000 + Math.random() * 9000)}`;
+
+  if (IS_MOCK) {
+    const created = {
+      id: `usr-${Date.now()}`,
+      employee_id: employeeId,
+      email: newEmployeeData.email,
+      role: newEmployeeData.role || 'employee',
+      name: newEmployeeData.name,
+      phone: newEmployeeData.phone || '',
+      address: newEmployeeData.address || '',
+      job_title: newEmployeeData.job_title || 'Specialist',
+      department: newEmployeeData.department || 'Operations',
+      salary: Number(newEmployeeData.salary) || 65000,
+      profile_pic: `https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=256&auto=format&fit=crop&q=80`
+    };
+
+    mockUsers.unshift(created);
+    return { data: created, error: null };
+  }
+
+  const { data, error } = await supabase
+    .from('users')
+    .insert({
+      employee_id: employeeId,
+      email: newEmployeeData.email,
+      role: newEmployeeData.role || 'employee',
+      name: newEmployeeData.name,
+      phone: newEmployeeData.phone || null,
+      address: newEmployeeData.address || null,
+      job_title: newEmployeeData.job_title || 'Specialist',
+      department: newEmployeeData.department || 'Operations',
+      salary: Number(newEmployeeData.salary) || 65000,
+    })
+    .select()
+    .single();
+
+  return { data, error: error?.message || null };
+}
+
 export async function updateUser(userId, updates) {
   if (IS_MOCK) {
     const idx = mockUsers.findIndex(u => u.id === userId);
@@ -99,6 +140,7 @@ export async function getDepartments() {
 export const userService = {
   getUser,
   getEmployeeById,
+  createEmployee,
   updateUser,
   getAllUsers,
   getAllEmployees,

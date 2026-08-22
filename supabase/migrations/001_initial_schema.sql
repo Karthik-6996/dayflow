@@ -137,24 +137,27 @@ as $$
 declare
   requested_employee_id text;
   requested_name text;
+  requested_role public.app_role;
 begin
-  requested_employee_id := nullif(trim(new.raw_user_meta_data ->> 'employee_id'), '');
-  requested_name := coalesce(nullif(trim(new.raw_user_meta_data ->> 'name'), ''), '');
-
-  if requested_employee_id is null then
-    raise exception 'employee_id is required in auth user metadata';
-  end if;
+  requested_employee_id := coalesce(nullif(trim(new.raw_user_meta_data ->> 'employee_id'), ''), 'DF-' || floor(1000 + random() * 9000)::text);
+  requested_name := coalesce(nullif(trim(new.raw_user_meta_data ->> 'name'), ''), split_part(new.email, '@', 1));
+  requested_role := case 
+    when (new.raw_user_meta_data ->> 'role') = 'admin' then 'admin'::public.app_role 
+    else 'employee'::public.app_role 
+  end;
 
   insert into public.users (id, employee_id, email, role, name)
   values (
     new.id,
     requested_employee_id,
     new.email,
-    'employee',
+    requested_role,
     requested_name
   )
   on conflict (id) do update
     set email = excluded.email,
+        role = coalesce(public.users.role, excluded.role),
+        name = case when public.users.name = '' then excluded.name else public.users.name end,
         updated_at = now();
 
   return new;

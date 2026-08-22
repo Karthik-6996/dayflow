@@ -19,7 +19,8 @@ import {
   IndianRupee,
   Eye,
   Shield,
-  Filter
+  Filter,
+  UserPlus
 } from 'lucide-react';
 import { formatINR } from '../../lib/currency';
 import { toast } from 'sonner';
@@ -30,20 +31,62 @@ export const EmployeeDirectory = () => {
   const [search, setSearch] = useState('');
   const [deptFilter, setDeptFilter] = useState('all');
   const [selectedUser, setSelectedUser] = useState(null);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newEmployee, setNewEmployee] = useState({
+    name: '',
+    email: '',
+    employee_id: '',
+    role: 'employee',
+    job_title: '',
+    department: 'Engineering',
+    salary: 1200000,
+    phone: '',
+    address: ''
+  });
+
+  const loadEmployees = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await userService.getAllUsers();
+      if (error) toast.error("Error loading directory");
+      setEmployees(data || []);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const loadEmployees = async () => {
-      setLoading(true);
-      try {
-        const { data, error } = await userService.getAllUsers();
-        if (error) toast.error("Error loading directory");
-        setEmployees(data || []);
-      } finally {
-        setLoading(false);
-      }
-    };
     loadEmployees();
   }, []);
+
+  const handleCreateEmployee = async (e) => {
+    e.preventDefault();
+    setCreating(true);
+    try {
+      const { data, error } = await userService.createEmployee(newEmployee);
+      if (error) {
+        toast.error(error);
+      } else {
+        toast.success(`Account provisioned for ${newEmployee.name}`);
+        setIsAddModalOpen(false);
+        setNewEmployee({
+          name: '',
+          email: '',
+          employee_id: '',
+          role: 'employee',
+          job_title: '',
+          department: 'Engineering',
+          salary: 1200000,
+          phone: '',
+          address: ''
+        });
+        await loadEmployees();
+      }
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const filteredEmployees = employees.filter((emp) => {
     const matchesDept = deptFilter === 'all' || emp.department === deptFilter;
@@ -55,7 +98,7 @@ export const EmployeeDirectory = () => {
     return matchesDept && matchesSearch;
   });
 
-  const departments = ['all', ...new Set(employees.map(e => e.department))];
+  const departments = ['all', ...new Set(employees.map(e => e.department).filter(Boolean))];
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -70,6 +113,14 @@ export const EmployeeDirectory = () => {
           </div>
           <p className="text-xs text-slate-500 mt-1">Search, inspect, and manage staff records across all corporate departments</p>
         </div>
+
+        <Button
+          variant="primary"
+          onClick={() => setIsAddModalOpen(true)}
+          className="bg-purple-600 hover:bg-purple-700 font-bold self-start sm:self-auto"
+        >
+          <UserPlus className="w-4 h-4 mr-2" /> Add New Personnel
+        </Button>
       </div>
 
       {/* Directory Metrics */}
@@ -83,7 +134,7 @@ export const EmployeeDirectory = () => {
         />
         <StatCard
           title="Departments"
-          value={(departments.length - 1).toString()}
+          value={Math.max(1, departments.length - 1).toString()}
           subtitle="Functional divisions"
           icon={Building}
           color="teal"
@@ -144,21 +195,18 @@ export const EmployeeDirectory = () => {
             Loading employee directory...
           </div>
         ) : filteredEmployees.length === 0 ? (
-          <div className="py-12 text-center text-slate-400 text-sm">
-            No employees match your search criteria.
+          <div className="py-12 text-center text-slate-500 text-sm">
+            No personnel found matching criteria.
           </div>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Employee</TableHead>
-                <TableHead>ID</TableHead>
-                <TableHead>Department</TableHead>
-                <TableHead>Job Title</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Assigned Role</TableHead>
+                <TableHead>Department & Role</TableHead>
+                <TableHead>Contact</TableHead>
                 <TableHead>Annual CTC</TableHead>
-                <TableHead className="text-right">Action</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -168,21 +216,18 @@ export const EmployeeDirectory = () => {
                     <div className="flex items-center gap-3">
                       <Avatar src={emp.profile_pic} name={emp.name} size="sm" role={emp.role} />
                       <div>
-                        <p className="font-semibold text-slate-900 leading-tight">{emp.name}</p>
-                        <p className="text-[11px] text-slate-500">{emp.email}</p>
+                        <p className="text-xs font-bold text-slate-900">{emp.name}</p>
+                        <p className="text-[11px] font-mono text-slate-400">{emp.employee_id}</p>
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="font-mono text-xs text-slate-600">{emp.employee_id}</TableCell>
                   <TableCell>
-                    <span className="inline-flex items-center gap-1.5 text-xs text-slate-700 font-medium">
-                      <Building className="w-3.5 h-3.5 text-slate-400" />
-                      {emp.department}
-                    </span>
+                    <p className="text-xs font-medium text-slate-800">{emp.job_title || 'Specialist'}</p>
+                    <p className="text-[11px] text-slate-500">{emp.department || 'Operations'}</p>
                   </TableCell>
-                  <TableCell className="text-xs text-slate-700 font-medium">{emp.job_title}</TableCell>
                   <TableCell>
-                    <Badge variant={emp.role}>{emp.role}</Badge>
+                    <p className="text-xs text-slate-700">{emp.email}</p>
+                    <p className="text-[11px] text-slate-400">{emp.phone || 'No phone'}</p>
                   </TableCell>
                   <TableCell className="font-mono text-xs font-bold text-slate-900">
                     {formatINR(emp.salary || 1200000)}
@@ -191,11 +236,10 @@ export const EmployeeDirectory = () => {
                     <Button
                       variant="ghost"
                       size="sm"
-                      icon={Eye}
                       onClick={() => setSelectedUser(emp)}
-                      className="text-purple-700 hover:bg-purple-50"
+                      className="text-purple-600 hover:text-purple-700 hover:bg-purple-50"
                     >
-                      Inspect
+                      <Eye className="w-4 h-4 mr-1" /> View Details
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -204,6 +248,130 @@ export const EmployeeDirectory = () => {
           </Table>
         )}
       </Card>
+
+      {/* Provision New Employee Modal */}
+      <Modal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        title="Provision Company Login & Profile"
+        subtitle="Create an employee or administrator account with pre-assigned company credentials"
+      >
+        <form onSubmit={handleCreateEmployee} className="space-y-4 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">Full Name *</label>
+              <input
+                type="text"
+                required
+                value={newEmployee.name}
+                onChange={(e) => setNewEmployee({ ...newEmployee, name: e.target.value })}
+                placeholder="e.g. Jordan Miller"
+                className="w-full p-2 rounded-lg bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-purple-600 focus:ring-1 focus:ring-purple-600 outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">Employee ID *</label>
+              <input
+                type="text"
+                required
+                value={newEmployee.employee_id}
+                onChange={(e) => setNewEmployee({ ...newEmployee, employee_id: e.target.value })}
+                placeholder="e.g. DF-1044"
+                className="w-full p-2 rounded-lg bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-purple-600 focus:ring-1 focus:ring-purple-600 outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">Company Login Email *</label>
+              <input
+                type="email"
+                required
+                value={newEmployee.email}
+                onChange={(e) => setNewEmployee({ ...newEmployee, email: e.target.value })}
+                placeholder="jordan.miller@dayflow.internal"
+                className="w-full p-2 rounded-lg bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-purple-600 focus:ring-1 focus:ring-purple-600 outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">Account Role</label>
+              <select
+                value={newEmployee.role}
+                onChange={(e) => setNewEmployee({ ...newEmployee, role: e.target.value })}
+                className="w-full p-2 rounded-lg bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-purple-600 focus:ring-1 focus:ring-purple-600 outline-none"
+              >
+                <option value="employee">Employee (User Portal)</option>
+                <option value="admin">Administrator (HR Portal)</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">Job Designation</label>
+              <input
+                type="text"
+                value={newEmployee.job_title}
+                onChange={(e) => setNewEmployee({ ...newEmployee, job_title: e.target.value })}
+                placeholder="e.g. QA Automation Engineer"
+                className="w-full p-2 rounded-lg bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-purple-600 focus:ring-1 focus:ring-purple-600 outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">Department</label>
+              <select
+                value={newEmployee.department}
+                onChange={(e) => setNewEmployee({ ...newEmployee, department: e.target.value })}
+                className="w-full p-2 rounded-lg bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-purple-600 focus:ring-1 focus:ring-purple-600 outline-none"
+              >
+                <option value="Engineering">Engineering</option>
+                <option value="Design & UX">Design & UX</option>
+                <option value="Human Resources">Human Resources</option>
+                <option value="Marketing">Marketing</option>
+                <option value="Operations">Operations</option>
+                <option value="Finance">Finance</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">Annual CTC (₹ INR)</label>
+              <input
+                type="number"
+                value={newEmployee.salary}
+                onChange={(e) => setNewEmployee({ ...newEmployee, salary: e.target.value })}
+                placeholder="1200000"
+                className="w-full p-2 rounded-lg bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-purple-600 focus:ring-1 focus:ring-purple-600 outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">Contact Phone</label>
+              <input
+                type="text"
+                value={newEmployee.phone}
+                onChange={(e) => setNewEmployee({ ...newEmployee, phone: e.target.value })}
+                placeholder="+91 98765 43210"
+                className="w-full p-2 rounded-lg bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-purple-600 focus:ring-1 focus:ring-purple-600 outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4 border-t border-slate-200">
+            <Button type="button" variant="secondary" onClick={() => setIsAddModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" loading={creating} className="bg-purple-600 hover:bg-purple-700 text-white font-bold">
+              Provision Personnel Account
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
       {/* Employee Detail Modal */}
       <Modal
