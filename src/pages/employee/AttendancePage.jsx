@@ -324,45 +324,54 @@ export const AttendancePage = () => {
             {/* Work Mode Selection & Status */}
             <div className="mt-5 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                {/* Work mode selector */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-zinc-500 dark:text-zinc-400 font-medium">Work Mode:</span>
-                  <div className="inline-flex rounded-lg p-0.5 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
-                    <button
-                      type="button"
-                      onClick={() => handleWorkModeChange(WORK_MODES.OFFICE)}
-                      className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
-                        workMode === WORK_MODES.OFFICE || workMode === 'office'
-                          ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs font-bold'
-                          : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                      }`}
-                    >
-                      <Building className="w-3.5 h-3.5" /> Office
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleWorkModeChange(WORK_MODES.WFH)}
-                      className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
-                        workMode === WORK_MODES.WFH || workMode === 'wfh'
-                          ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs font-bold'
-                          : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                      }`}
-                    >
-                      <Laptop className="w-3.5 h-3.5" /> WFH
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleWorkModeChange(WORK_MODES.ON_DUTY)}
-                      className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
-                        workMode === WORK_MODES.ON_DUTY || workMode === 'on_duty' || workMode === 'client' || workMode === 'client_site'
-                          ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs font-bold'
-                          : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                      }`}
-                    >
-                      <Briefcase className="w-3.5 h-3.5" /> Client
-                    </button>
+                {/* Work mode selector (Hidden for Admin, Work from Office is default and only option) */}
+                {!(isAdmin || currentUser?.role === 'admin') ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-zinc-500 dark:text-zinc-400 font-medium">Work Mode:</span>
+                    <div className="inline-flex rounded-lg p-0.5 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
+                      <button
+                        type="button"
+                        onClick={() => handleWorkModeChange(WORK_MODES.OFFICE)}
+                        className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                          workMode === WORK_MODES.OFFICE || workMode === 'office'
+                            ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs font-bold'
+                            : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <Building className="w-3.5 h-3.5" /> Office
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleWorkModeChange(WORK_MODES.WFH)}
+                        className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                          workMode === WORK_MODES.WFH || workMode === 'wfh'
+                            ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs font-bold'
+                            : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <Laptop className="w-3.5 h-3.5" /> WFH
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleWorkModeChange(WORK_MODES.ON_DUTY)}
+                        className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                          workMode === WORK_MODES.ON_DUTY || workMode === 'on_duty' || workMode === 'client' || workMode === 'client_site'
+                            ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs font-bold'
+                            : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <Briefcase className="w-3.5 h-3.5" /> Client
+                      </button>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-zinc-500 dark:text-zinc-400 font-medium">Work Mode:</span>
+                    <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 flex items-center gap-1.5">
+                      <Building className="w-3.5 h-3.5" /> Work from Office
+                    </span>
+                  </div>
+                )}
 
                 {/* Status Badge */}
                 <div className="flex items-center gap-2">

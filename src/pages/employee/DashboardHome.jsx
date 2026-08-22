@@ -121,15 +121,17 @@ export const DashboardHome = () => {
 
           {!isCheckedIn ? (
             <div className="flex items-center gap-2">
-              <select
-                value={workMode}
-                onChange={(e) => setWorkMode(e.target.value)}
-                className="bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 text-xs px-2.5 py-1.5 rounded-md border border-zinc-200 dark:border-zinc-700 focus:outline-none cursor-pointer"
-              >
-                <option value={WORK_MODES?.OFFICE || 'office'}>Office</option>
-                <option value={WORK_MODES?.WFH || 'wfh'}>WFH</option>
-                <option value={WORK_MODES?.ON_DUTY || 'on_duty'}>On-Duty</option>
-              </select>
+              {!(isAdmin || currentUser?.role === 'admin') && (
+                <select
+                  value={workMode}
+                  onChange={(e) => setWorkMode(e.target.value)}
+                  className="bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 text-xs px-2.5 py-1.5 rounded-md border border-zinc-200 dark:border-zinc-700 focus:outline-none cursor-pointer"
+                >
+                  <option value={WORK_MODES?.OFFICE || 'office'}>Office</option>
+                  <option value={WORK_MODES?.WFH || 'wfh'}>WFH</option>
+                  <option value={WORK_MODES?.ON_DUTY || 'on_duty'}>On-Duty</option>
+                </select>
+              )}
               <button
                 type="button"
                 disabled={checkingIn}
