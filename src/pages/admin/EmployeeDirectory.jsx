@@ -26,13 +26,14 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { IS_MOCK } from '../../services/supabaseClient';
 import { mockUsers } from '../../mocks/users';
 
 export const EmployeeDirectory = () => {
-  const [employees, setEmployees] = useState(mockUsers || []);
+  const [employees, setEmployees] = useState(IS_MOCK ? (mockUsers || []) : []);
   const [attendances, setAttendances] = useState([]);
   const [leaves, setLeaves] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(!IS_MOCK);
   const [search, setSearch] = useState('');
   const [deptFilter, setDeptFilter] = useState('all');
   const [selectedUser, setSelectedUser] = useState(null);
@@ -60,13 +61,11 @@ export const EmployeeDirectory = () => {
         attendanceService.getAllAttendance({ dateFilter: new Date().toISOString().split('T')[0] }),
         leaveService.getAllLeaves()
       ]);
-      if (usersRes.data && usersRes.data.length > 0) {
-        setEmployees(usersRes.data);
-      }
+      setEmployees(usersRes.data || []);
       setAttendances(attRes.data || []);
       setLeaves(leavesRes.data || []);
     } catch (e) {
-      console.warn("Background directory refresh:", e);
+      console.warn("Directory data fetch:", e);
     } finally {
       setLoading(false);
     }
