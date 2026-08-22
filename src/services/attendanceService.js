@@ -8,14 +8,72 @@ import { getIndianHoliday, isWeekend } from '../lib/indianHolidays';
 import { differenceInMinutes, parseISO } from 'date-fns';
 
 /**
+ * Persistent storage helpers for multi-punch sessions
+ */
+function getStoredPunches(userId, date) {
+  try {
+    if (typeof window === 'undefined') return null;
+    const raw = localStorage.getItem(`dayflow_punches_${userId}_${date}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function setStoredPunches(userId, date, data) {
+  try {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(`dayflow_punches_${userId}_${date}`, JSON.stringify(data));
+  } catch (e) {}
+}
+
+function clearStoredPunches(userId, date) {
+  try {
+    if (typeof window === 'undefined') return;
+    localStorage.removeItem(`dayflow_punches_${userId}_${date}`);
+  } catch (e) {}
+}
+
+/**
  * Helper to get mock data for attendance
  */
 function getMockEmployeeAttendance(userId, startDate, endDate) {
+  const today = new Date().toISOString().split('T')[0];
+  const stored = getStoredPunches(userId, today);
+
   let filtered = mockAttendance.filter(a => a.user_id === userId);
   if (filtered.length === 0) {
     // If specific user not found in mock seeds, return default user records mapped to this ID
     filtered = mockAttendance.filter(a => a.user_id === 'usr-001-emp').map(a => ({ ...a, user_id: userId }));
   }
+
+  // Merge today's stored session state if available
+  if (stored) {
+    let todayRec = filtered.find(a => a.date === today);
+    if (todayRec) {
+      todayRec.check_in_time = stored.check_in_time;
+      todayRec.check_out_time = stored.check_out_time;
+      todayRec.status = stored.status || todayRec.status;
+      todayRec.work_mode = stored.work_mode || todayRec.work_mode;
+      todayRec.break_minutes = stored.break_minutes ?? todayRec.break_minutes;
+      todayRec.punches = stored.punches || todayRec.punches;
+    } else {
+      filtered.unshift({
+        id: `att-today-${userId}`,
+        user_id: userId,
+        date: today,
+        check_in_time: stored.check_in_time,
+        check_out_time: stored.check_out_time,
+        status: stored.status || 'present',
+        work_mode: stored.work_mode || 'office',
+        break_minutes: stored.break_minutes || 0,
+        is_late: false,
+        location: 'Bangalore HQ',
+        punches: stored.punches || []
+      });
+    }
+  }
+
   if (startDate) filtered = filtered.filter(a => a.date >= startDate);
   if (endDate) filtered = filtered.filter(a => a.date <= endDate);
   filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -36,35 +94,42 @@ export async function checkIn(userId, { workMode = WORK_MODES.OFFICE, location =
   const shiftStartCutoff = shiftHours * 60 + shiftMins + SHIFT_CONFIG.GRACE_MINUTES;
   const isLate = currentMinutesFromMidnight > shiftStartCutoff;
 
-  let existing = mockAttendance.find(a => (userId && a.user_id === userId && a.date === today) || (a.user_id === userId && a.date === today));
-  
+  // Retrieve existing stored state or in-memory state
+  const stored = getStoredPunches(userId, today);
+  let existing = mockAttendance.find(a => a.user_id === userId && a.date === today);
+
+  const punches = stored?.punches || (existing?.punches ? [...existing.punches] : []);
+  if (punches.length === 0 && existing?.check_in_time) {
+    punches.push({ id: 'p-1', in: existing.check_in_time, out: existing.check_out_time, work_mode: existing.work_mode || workMode });
+  }
+
+  // Add new punch session
+  punches.push({
+    id: `p-${Date.now()}`,
+    in: checkInTime,
+    out: null,
+    work_mode: workMode
+  });
+
+  const updatedState = {
+    check_in_time: checkInTime,
+    check_out_time: null,
+    status: 'present',
+    work_mode: workMode,
+    break_minutes: stored?.break_minutes ?? existing?.break_minutes ?? 0,
+    punches
+  };
+  setStoredPunches(userId, today, updatedState);
+
   if (existing) {
-    if (!existing.punches) {
-      existing.punches = existing.check_in_time ? [{ in: existing.check_in_time, out: existing.check_out_time, work_mode: existing.work_mode || workMode }] : [];
-    }
-
-    // Append new punch interval
-    existing.punches.push({
-      id: `p-${Date.now()}`,
-      in: checkInTime,
-      out: null,
-      work_mode: workMode
-    });
-
-    if (!existing.first_check_in_time) {
-      existing.first_check_in_time = existing.check_in_time || checkInTime;
-    }
     existing.check_in_time = checkInTime;
     existing.check_out_time = null;
     existing.status = 'present';
     existing.work_mode = workMode;
     existing.location = location;
-
-    if (IS_MOCK) {
-      return { data: existing, error: null };
-    }
+    existing.punches = punches;
   } else {
-    const newRecord = {
+    existing = {
       id: `att-${Date.now()}`,
       user_id: userId,
       date: today,
@@ -76,17 +141,13 @@ export async function checkIn(userId, { workMode = WORK_MODES.OFFICE, location =
       break_minutes: 0,
       is_late: isLate,
       location: location,
-      punches: [
-        { id: `p-${Date.now()}`, in: checkInTime, out: null, work_mode: workMode }
-      ]
+      punches
     };
+    mockAttendance.unshift(existing);
+  }
 
-    mockAttendance.unshift(newRecord);
-    existing = newRecord;
-
-    if (IS_MOCK) {
-      return { data: newRecord, error: null };
-    }
+  if (IS_MOCK) {
+    return { data: existing, error: null };
   }
 
   try {
@@ -107,7 +168,7 @@ export async function checkIn(userId, { workMode = WORK_MODES.OFFICE, location =
 
     return { data: data || existing, error: null };
   } catch (err) {
-    console.warn("Supabase checkIn fallback to local state:", err);
+    console.warn("Supabase checkIn fallback to persistent local state:", err);
     return { data: existing, error: null };
   }
 }
@@ -120,7 +181,7 @@ export async function checkOut(attendanceId, { breakMinutes = 0, userId } = {}) 
   const today = now.toISOString().split('T')[0];
   const checkOutTime = now.toISOString();
 
-  // Find target record by ID or userId
+  const stored = userId ? getStoredPunches(userId, today) : null;
   let record = mockAttendance.find(a => 
     (attendanceId && a.id === attendanceId) || 
     (userId && a.user_id === userId && a.date === today)
@@ -133,52 +194,64 @@ export async function checkOut(attendanceId, { breakMinutes = 0, userId } = {}) 
     record = mockAttendance.find(a => a.id === attendanceId);
   }
 
+  const punches = stored?.punches || (record?.punches ? [...record.punches] : []);
+  if (punches.length === 0) {
+    punches.push({ id: 'p-1', in: record?.check_in_time || checkOutTime, out: checkOutTime, work_mode: record?.work_mode || 'office' });
+  } else {
+    // Close the latest open punch
+    const openPunch = [...punches].reverse().find(p => !p.out);
+    if (openPunch) {
+      openPunch.out = checkOutTime;
+    } else {
+      punches.push({ id: `p-${Date.now()}`, in: record?.check_in_time || checkOutTime, out: checkOutTime, work_mode: record?.work_mode || 'office' });
+    }
+  }
+
+  const totalBreaks = (stored?.break_minutes ?? record?.break_minutes ?? 0) + breakMinutes;
+
+  // Calculate total accumulated net minutes across all punch sessions today
+  let totalGrossMinutes = 0;
+  punches.forEach(p => {
+    if (p.in && p.out) {
+      totalGrossMinutes += Math.max(0, differenceInMinutes(parseISO(p.out), parseISO(p.in)));
+    }
+  });
+
+  const netMinutes = Math.max(0, totalGrossMinutes - totalBreaks);
+  let status = 'present';
+  if (netMinutes < SHIFT_CONFIG.MIN_HALF_DAY_MINUTES) {
+    status = 'half-day';
+  } else if (netMinutes < SHIFT_CONFIG.MIN_FULL_DAY_MINUTES) {
+    status = 'half-day';
+  }
+
+  const updatedState = {
+    check_in_time: punches[punches.length - 1]?.in || record?.check_in_time || checkOutTime,
+    check_out_time: checkOutTime,
+    status,
+    work_mode: record?.work_mode || 'office',
+    break_minutes: totalBreaks,
+    punches
+  };
+
+  if (userId) {
+    setStoredPunches(userId, today, updatedState);
+  }
+
   if (record) {
     record.check_out_time = checkOutTime;
-    if (breakMinutes) {
-      record.break_minutes = (record.break_minutes || 0) + breakMinutes;
-    }
-
-    if (!record.punches || record.punches.length === 0) {
-      record.punches = [{ in: record.check_in_time || checkOutTime, out: checkOutTime, work_mode: record.work_mode || 'office' }];
-    } else {
-      // Find the latest open punch without an out time
-      const openPunch = [...record.punches].reverse().find(p => !p.out);
-      if (openPunch) {
-        openPunch.out = checkOutTime;
-      } else {
-        record.punches.push({ id: `p-${Date.now()}`, in: record.check_in_time || checkOutTime, out: checkOutTime, work_mode: record.work_mode || 'office' });
-      }
-    }
-
-    // Calculate total accumulated gross and net minutes across all punch sessions today
-    let totalGrossMinutes = 0;
-    record.punches.forEach(p => {
-      if (p.in && p.out) {
-        totalGrossMinutes += Math.max(0, differenceInMinutes(parseISO(p.out), parseISO(p.in)));
-      } else if (p.in && !p.out) {
-        totalGrossMinutes += Math.max(0, differenceInMinutes(parseISO(checkOutTime), parseISO(p.in)));
-      }
-    });
-
-    const netMinutes = Math.max(0, totalGrossMinutes - (record.break_minutes || 0));
+    record.status = status;
+    record.break_minutes = totalBreaks;
+    record.punches = punches;
     record.total_work_minutes = netMinutes;
-
-    if (netMinutes < SHIFT_CONFIG.MIN_HALF_DAY_MINUTES) {
-      record.status = 'half-day';
-    } else if (netMinutes < SHIFT_CONFIG.MIN_FULL_DAY_MINUTES) {
-      record.status = 'half-day';
-    } else {
-      record.status = 'present';
-    }
   }
 
   if (IS_MOCK) {
-    return { data: record || { id: attendanceId, check_out_time: checkOutTime, status: 'present' }, error: null };
+    return { data: record || { id: attendanceId, check_out_time: checkOutTime, status }, error: null };
   }
 
   try {
-    let query = supabase.from('attendance').update({ check_out_time: checkOutTime, break_minutes: record?.break_minutes || breakMinutes });
+    let query = supabase.from('attendance').update({ check_out_time: checkOutTime, break_minutes: totalBreaks, status });
     if (attendanceId && !attendanceId.startsWith('att-today') && !attendanceId.startsWith('att-')) {
       query = query.eq('id', attendanceId);
     } else if (userId) {
@@ -187,8 +260,8 @@ export async function checkOut(attendanceId, { breakMinutes = 0, userId } = {}) 
     const { data, error } = await query.select();
     return { data: data?.[0] || record, error: null };
   } catch (err) {
-    console.warn("Supabase checkOut fallback to local state:", err);
-    return { data: record || { id: attendanceId, check_out_time: checkOutTime, status: 'present' }, error: null };
+    console.warn("Supabase checkOut fallback to persistent local state:", err);
+    return { data: record || { id: attendanceId, check_out_time: checkOutTime, status }, error: null };
   }
 }
 
@@ -266,6 +339,7 @@ export async function updateWorkMode(attendanceId, workMode, userId) {
  */
 export async function reopenShift(attendanceId, userId) {
   const today = new Date().toISOString().split('T')[0];
+  const stored = userId ? getStoredPunches(userId, today) : null;
 
   // Update in-memory record so UI immediately reflects open shift
   let record = mockAttendance.find(a => 
@@ -280,9 +354,29 @@ export async function reopenShift(attendanceId, userId) {
     record = mockAttendance.find(a => a.id === attendanceId);
   }
 
+  const punches = stored?.punches || (record?.punches ? [...record.punches] : []);
+  if (punches.length > 0) {
+    const last = punches[punches.length - 1];
+    last.out = null;
+  }
+
+  const updatedState = {
+    check_in_time: record?.check_in_time || punches[0]?.in || new Date().toISOString(),
+    check_out_time: null,
+    status: 'present',
+    work_mode: record?.work_mode || 'office',
+    break_minutes: stored?.break_minutes ?? record?.break_minutes ?? 0,
+    punches
+  };
+
+  if (userId) {
+    setStoredPunches(userId, today, updatedState);
+  }
+
   if (record) {
     record.check_out_time = null;
     record.status = 'present';
+    record.punches = punches;
   } else if (userId) {
     record = {
       id: attendanceId || `att-${Date.now()}`,
@@ -294,7 +388,8 @@ export async function reopenShift(attendanceId, userId) {
       work_mode: 'office',
       break_minutes: 0,
       is_late: false,
-      location: 'Bangalore HQ'
+      location: 'Bangalore HQ',
+      punches
     };
     mockAttendance.unshift(record);
   }
@@ -305,15 +400,12 @@ export async function reopenShift(attendanceId, userId) {
 
   try {
     let query = supabase.from('attendance').update({ check_out_time: null, status: 'present' });
-    if (attendanceId && !attendanceId.startsWith('att-today')) {
+    if (attendanceId && !attendanceId.startsWith('att-today') && !attendanceId.startsWith('att-')) {
       query = query.eq('id', attendanceId);
     } else if (userId) {
       query = query.eq('user_id', userId).eq('date', today);
     }
     const { data, error } = await query.select();
-    if (error) {
-      console.warn("Supabase reopenShift returned error, using local fallback:", error.message);
-    }
     return { data: data?.[0] || record, error: null };
   } catch (err) {
     console.warn("Supabase reopenShift failed, using local fallback:", err);
@@ -327,7 +419,9 @@ export async function reopenShift(attendanceId, userId) {
 export async function resetTodayAttendance(userId) {
   const today = new Date().toISOString().split('T')[0];
 
-  const idx = mockAttendance.findIndex(a => (userId && a.user_id === userId && a.date === today) || a.date === today);
+  clearStoredPunches(userId, today);
+
+  const idx = mockAttendance.findIndex(a => (userId && a.user_id === userId && a.date === today) || (a.user_id === 'usr-001-emp' && a.date === today));
   if (idx !== -1) {
     mockAttendance.splice(idx, 1);
   }
@@ -352,9 +446,12 @@ export async function resetTodayAttendance(userId) {
 }
 
 /**
- * Fetch a single employee's attendance records with graceful fallback
+ * Fetch a single employee's attendance records with graceful fallback and stored punch enrichment
  */
 export async function getEmployeeAttendance(userId, { startDate, endDate } = {}) {
+  const today = new Date().toISOString().split('T')[0];
+  const stored = getStoredPunches(userId, today);
+
   if (IS_MOCK) {
     return { data: getMockEmployeeAttendance(userId, startDate, endDate), error: null };
   }
@@ -372,11 +469,25 @@ export async function getEmployeeAttendance(userId, { startDate, endDate } = {})
     const { data, error } = await query;
     if (error) throw error;
 
-    // If database returned records, return them; otherwise fallback to mock records for rich UI display
-    if (data && data.length > 0) {
-      return { data, error: null };
+    let records = data || [];
+    if (records.length === 0) {
+      records = getMockEmployeeAttendance(userId, startDate, endDate);
     }
-    return { data: getMockEmployeeAttendance(userId, startDate, endDate), error: null };
+
+    // Merge persistent stored punches for today
+    if (stored) {
+      const todayRec = records.find(r => r.date === today);
+      if (todayRec) {
+        todayRec.check_in_time = stored.check_in_time;
+        todayRec.check_out_time = stored.check_out_time;
+        todayRec.status = stored.status || todayRec.status;
+        todayRec.work_mode = stored.work_mode || todayRec.work_mode;
+        todayRec.break_minutes = stored.break_minutes ?? todayRec.break_minutes;
+        todayRec.punches = stored.punches || todayRec.punches;
+      }
+    }
+
+    return { data: records, error: null };
   } catch (err) {
     console.warn("Supabase attendance fetch failed, using fallback data:", err.message);
     return { data: getMockEmployeeAttendance(userId, startDate, endDate), error: null };
