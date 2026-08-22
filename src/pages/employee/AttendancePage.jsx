@@ -30,7 +30,9 @@ import { getIndianHoliday, isWeekend, getUpcomingIndianHolidays } from '../../li
 import { GoogleWorkspaceCalendar } from '../../components/calendar/GoogleWorkspaceCalendar';
 
 export const AttendancePage = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, isAdmin } = useAuth();
+  const isAdminUser = Boolean(isAdmin || currentUser?.role === 'admin');
+
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [regularizations, setRegularizations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -325,7 +327,7 @@ export const AttendancePage = () => {
             <div className="mt-5 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                 {/* Work mode selector (Hidden for Admin, Work from Office is default and only option) */}
-                {!(isAdmin || currentUser?.role === 'admin') ? (
+                {!isAdminUser ? (
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-zinc-500 dark:text-zinc-400 font-medium">Work Mode:</span>
                     <div className="inline-flex rounded-lg p-0.5 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
