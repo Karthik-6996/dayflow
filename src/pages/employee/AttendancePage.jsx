@@ -23,24 +23,35 @@ import {
   ChevronLeft,
   ChevronRight,
   Info,
-  History
+  History,
+  Sparkles,
+  LayoutGrid,
+  CalendarRange
 } from 'lucide-react';
-import { format, differenceInMinutes, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from 'date-fns';
+import { format, differenceInMinutes, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, subMonths } from 'date-fns';
 import { toast } from 'sonner';
 import { SHIFT_CONFIG } from '../../lib/constants';
-import { getIndianHoliday, isWeekend } from '../../lib/indianHolidays';
+import { getIndianHoliday, isWeekend, getPlannedHolidays } from '../../lib/indianHolidays';
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
 
 export const AttendancePage = () => {
   const { currentUser } = useAuth();
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const [viewMode, setViewMode] = useState('calendar'); // 'calendar' or 'history'
+  const [viewMode, setViewMode] = useState('calendar'); // 'calendar', 'year-planner', 'history'
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  // Month navigation for employee calendar view
-  const [currentMonthDate, setCurrentMonthDate] = useState(new Date(2026, 7, 1)); // August 2026
+  // Month & Year Navigation for Calendar & Annual Planner
+  const [selectedYear, setSelectedYear] = useState(2026);
+  const [selectedMonth, setSelectedMonth] = useState(7); // 0-indexed: 7 = August
   const [selectedDayDetails, setSelectedDayDetails] = useState(null);
+
+  const currentMonthDate = new Date(selectedYear, selectedMonth, 1);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -67,11 +78,10 @@ export const AttendancePage = () => {
   const todayStr = '2026-08-22';
   const todayRecord = attendanceRecords.find(a => a.date === todayStr);
 
-  // Prevent duplicate check-in / check-out checks
   const isCheckedIn = !!todayRecord?.check_in_time;
   const isCheckedOut = !!todayRecord?.check_out_time;
 
-  // Handle Check-in (Associate with logged-in employee)
+  // Handle Check-in
   const handleCheckIn = async () => {
     if (isCheckedIn) {
       toast.warning("You are already checked in for today!");
@@ -130,8 +140,32 @@ export const AttendancePage = () => {
     return `${hrs}h ${mins < 10 ? '0' : ''}${mins}m`;
   };
 
-  // Monthly Attendance Summary Calculations (for current viewing month)
-  const currentMonthStr = format(currentMonthDate, 'yyyy-MM');
+  // Navigation handlers
+  const handlePrevMonth = () => {
+    if (selectedMonth === 0) {
+      setSelectedMonth(11);
+      setSelectedYear(prev => prev - 1);
+    } else {
+      setSelectedMonth(prev => prev - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (selectedMonth === 11) {
+      setSelectedMonth(0);
+      setSelectedYear(prev => prev + 1);
+    } else {
+      setSelectedMonth(prev => prev + 1);
+    }
+  };
+
+  const handleJumpToCurrent = () => {
+    setSelectedYear(2026);
+    setSelectedMonth(7); // August
+  };
+
+  // Monthly Attendance Summary Calculations (for current selected month & year)
+  const currentMonthStr = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
   const monthRecords = attendanceRecords.filter(r => r.date.startsWith(currentMonthStr));
 
   const monthStart = startOfMonth(currentMonthDate);
@@ -151,14 +185,20 @@ export const AttendancePage = () => {
   const absentDays = monthRecords.filter(r => r.status === 'absent').length;
   const lateCheckIns = monthRecords.filter(r => r.is_late).length;
 
+  const isFutureMonth = currentMonthStr > '2026-08';
+  const isPastMonth = currentMonthStr < '2026-08';
+
+  // Planned holidays for the selected year
+  const plannedHolidaysForYear = getPlannedHolidays(selectedYear);
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">My Attendance Portal</h1>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Attendance & Annual Calendar</h1>
           <p className="text-xs text-slate-500 mt-1">
-            Personal attendance dashboard, live check-in/out, monthly summary & calendar
+            Personal attendance tracking, past timesheets & upcoming annual planned company calendar ({selectedYear})
           </p>
         </div>
 
@@ -171,8 +211,19 @@ export const AttendancePage = () => {
             }`}
           >
             <Calendar className="w-3.5 h-3.5" />
-            My Attendance Calendar
+            Monthly Calendar
           </button>
+
+          <button
+            onClick={() => setViewMode('year-planner')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+              viewMode === 'year-planner' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <CalendarRange className="w-3.5 h-3.5" />
+            {selectedYear} Annual Planner
+          </button>
+
           <button
             onClick={() => setViewMode('history')}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 ${
@@ -185,7 +236,7 @@ export const AttendancePage = () => {
         </div>
       </div>
 
-      {/* Live Punch Clock Widget & Today's Attendance Status */}
+      {/* Live Punch Clock Widget & Summary Cards */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Today's Punch Widget */}
         <Card className="lg:col-span-1 bg-gradient-to-br from-slate-950 via-teal-950 to-slate-900 text-white border-slate-800 p-6 flex flex-col justify-between shadow-xl relative overflow-hidden">
@@ -195,7 +246,7 @@ export const AttendancePage = () => {
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold text-teal-400 uppercase tracking-wider flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-teal-400 animate-pulse" />
-                Today's Punch Status
+                Live Punch Console
               </span>
               <span className="text-xs text-slate-300 font-medium">
                 {format(currentTime, 'EEE, dd MMM yyyy')}
@@ -243,7 +294,7 @@ export const AttendancePage = () => {
             </div>
           </div>
 
-          {/* Action Buttons (Preventing duplicate check-in/check-out) */}
+          {/* Action Buttons */}
           <div className="pt-2">
             {!isCheckedIn ? (
               <Button
@@ -275,12 +326,24 @@ export const AttendancePage = () => {
           </div>
         </Card>
 
-        {/* Monthly Attendance Summary Metrics */}
+        {/* Monthly Attendance Summary Metrics for Selected Month */}
         <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
-              {format(currentMonthDate, 'MMMM yyyy')} Attendance Summary
-            </h3>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                <span>{MONTH_NAMES[selectedMonth]} {selectedYear} Attendance Summary</span>
+                {isFutureMonth && (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 uppercase">
+                    Upcoming Month Planner
+                  </span>
+                )}
+                {isPastMonth && (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 uppercase">
+                    Archived Past Month
+                  </span>
+                )}
+              </h3>
+            </div>
             <span className="text-xs text-slate-500 font-medium">
               Employee ID: <span className="font-mono font-bold text-slate-700">{currentUser?.employee_id || 'DF-1001'}</span>
             </span>
@@ -291,21 +354,21 @@ export const AttendancePage = () => {
             <StatCard
               title="Total Working Days"
               value={`${totalWorkingDays} Days`}
-              subtitle={`Excluding weekends & holidays`}
+              subtitle={`Planned corporate schedule`}
               icon={CalendarDays}
               color="purple"
             />
             <StatCard
               title="Present Days"
               value={`${presentDays} Days`}
-              subtitle="Full-day logged presence"
+              subtitle={isFutureMonth ? 'Scheduled days ahead' : 'Full-day presence'}
               icon={CheckCircle}
               color="emerald"
             />
             <StatCard
               title="Absent Days"
               value={`${absentDays} Days`}
-              subtitle="Unaccounted absence"
+              subtitle={isFutureMonth ? '0' : 'Unaccounted absence'}
               icon={UserX}
               color={absentDays > 0 ? 'rose' : 'teal'}
             />
@@ -334,17 +397,60 @@ export const AttendancePage = () => {
         </div>
       </div>
 
-      {/* VIEW 1: Employee Attendance Calendar */}
+      {/* VIEW 1: Full Monthly Attendance & Planned Calendar with Month/Year Navigation */}
       {viewMode === 'calendar' && (
         <Card className="p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-            <div>
-              <h3 className="text-base font-bold text-slate-900">
-                My Attendance Calendar ({format(currentMonthDate, 'MMMM yyyy')})
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Click any calendar date to view check-in/out timestamps, hours worked, and remarks
-              </p>
+          {/* Month & Year Navigation Control Bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-100">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                <button
+                  onClick={handlePrevMonth}
+                  className="p-1.5 rounded-lg text-slate-700 hover:bg-white transition-all shadow-2xs"
+                  title="Previous Month"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                <div className="flex items-center gap-1.5 px-2">
+                  <select
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                    className="bg-transparent font-bold text-slate-800 text-sm focus:outline-none cursor-pointer py-1"
+                  >
+                    {MONTH_NAMES.map((name, idx) => (
+                      <option key={name} value={idx}>{name}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(Number(e.target.value))}
+                    className="bg-transparent font-bold text-slate-800 text-sm focus:outline-none cursor-pointer py-1"
+                  >
+                    <option value={2025}>2025</option>
+                    <option value={2026}>2026</option>
+                    <option value={2027}>2027</option>
+                  </select>
+                </div>
+
+                <button
+                  onClick={handleNextMonth}
+                  className="p-1.5 rounded-lg text-slate-700 hover:bg-white transition-all shadow-2xs"
+                  title="Next Month"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
+              {(selectedYear !== 2026 || selectedMonth !== 7) && (
+                <button
+                  onClick={handleJumpToCurrent}
+                  className="px-2.5 py-1 text-xs font-bold rounded-lg bg-teal-50 text-teal-700 hover:bg-teal-100 border border-teal-200 transition-all"
+                >
+                  Current Month
+                </button>
+              )}
             </div>
 
             {/* Legend */}
@@ -353,7 +459,7 @@ export const AttendancePage = () => {
               <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Half-Day</span>
               <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> Absent</span>
               <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-blue-500" /> On Leave</span>
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-purple-500" /> Holiday</span>
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-purple-500" /> Gazetted Holiday</span>
               <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-slate-300" /> Weekend</span>
             </div>
           </div>
@@ -383,6 +489,7 @@ export const AttendancePage = () => {
                 const holiday = getIndianHoliday(dateStr);
                 const record = attendanceRecords.find(a => a.date === dateStr);
                 const isToday = dateStr === todayStr;
+                const isFutureDate = dateStr > todayStr;
 
                 return (
                   <div
@@ -435,6 +542,8 @@ export const AttendancePage = () => {
                         </div>
                       ) : isWknd ? (
                         <span className="text-[10px] text-slate-400 font-medium">Weekly Off</span>
+                      ) : isFutureDate ? (
+                        <span className="text-[10px] text-teal-600 font-medium">Scheduled Workday</span>
                       ) : (
                         <span className="text-[10px] text-slate-300 italic">No log</span>
                       )}
@@ -447,7 +556,88 @@ export const AttendancePage = () => {
         </Card>
       )}
 
-      {/* VIEW 2: Daily Attendance History Table */}
+      {/* VIEW 2: 12-Month Annual Planned Calendar Grid */}
+      {viewMode === 'year-planner' && (
+        <Card className="p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+            <div>
+              <h3 className="text-base font-bold text-slate-900">
+                {selectedYear} Annual Planned Calendar Roster
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Overview of all 12 months with planned corporate gazetted holidays, working days, and past attendance logs
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold bg-white text-slate-800 focus:border-teal-500"
+              >
+                <option value={2025}>2025 Calendar</option>
+                <option value={2026}>2026 Calendar</option>
+                <option value={2027}>2027 Calendar (Planned)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* 12 Months Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {MONTH_NAMES.map((monthName, mIdx) => {
+              const mDate = new Date(selectedYear, mIdx, 1);
+              const mDays = eachDayOfInterval({ start: startOfMonth(mDate), end: endOfMonth(mDate) });
+              const mPrefix = `${selectedYear}-${String(mIdx + 1).padStart(2, '0')}`;
+              const mHolidays = plannedHolidaysForYear.filter(h => h.date.startsWith(mPrefix));
+              const mRecords = attendanceRecords.filter(r => r.date.startsWith(mPrefix));
+              const mWorkDays = mDays.filter(d => !isWeekend(d) && !getIndianHoliday(format(d, 'yyyy-MM-dd'))).length;
+              const isSelected = selectedMonth === mIdx;
+
+              return (
+                <div
+                  key={monthName}
+                  onClick={() => {
+                    setSelectedMonth(mIdx);
+                    setViewMode('calendar');
+                  }}
+                  className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between hover:shadow-md ${
+                    isSelected ? 'bg-teal-50/60 border-teal-300 ring-2 ring-teal-500' : 'bg-white border-slate-200 hover:border-teal-200'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-bold text-slate-900 text-sm">{monthName}</h4>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                        {mWorkDays} Work Days
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5 my-3">
+                      {mHolidays.length > 0 ? (
+                        mHolidays.map(h => (
+                          <div key={h.date} className="flex items-center justify-between text-[11px] p-1.5 rounded-lg bg-purple-50 border border-purple-100">
+                            <span className="font-semibold text-purple-900 truncate max-w-[130px]">{h.name}</span>
+                            <span className="text-[10px] font-bold text-purple-700">{format(parseISO(h.date), 'dd MMM')}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-[11px] text-slate-400 italic py-1">No gazetted holidays</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500">{mRecords.length} logs recorded</span>
+                    <span className="font-bold text-teal-700 hover:underline">Open Month →</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {/* VIEW 3: Daily Attendance History Table */}
       {viewMode === 'history' && (
         <Card>
           <CardHeader
@@ -584,7 +774,7 @@ export const AttendancePage = () => {
               </div>
             ) : (
               <div className="p-4 text-center text-slate-500 text-xs">
-                No attendance recorded for this date.
+                {selectedDayDetails.date > todayStr ? 'Scheduled corporate workday.' : 'No attendance recorded for this date.'}
               </div>
             )}
 

@@ -25,27 +25,40 @@ import {
   X,
   CalendarDays,
   UserX,
-  FileText
+  FileText,
+  ChevronLeft,
+  ChevronRight,
+  CalendarRange,
+  Sparkles,
+  Settings
 } from 'lucide-react';
 import { format, parseISO, differenceInMinutes, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from 'date-fns';
 import { toast } from 'sonner';
-import { getIndianHoliday, isWeekend } from '../../lib/indianHolidays';
+import { getIndianHoliday, isWeekend, getPlannedHolidays, savePlannedHoliday } from '../../lib/indianHolidays';
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
 
 export const AllAttendancePage = () => {
-  const [activeTab, setActiveTab] = useState('list'); // 'list' or 'calendar'
+  const [activeTab, setActiveTab] = useState('list'); // 'list', 'calendar', 'year-planner'
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Filters
+  // Filters for Daily List
   const [selectedDate, setSelectedDate] = useState('2026-08-22');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('all');
   const [selectedDepartment, setSelectedDepartment] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Admin Calendar specific states
+  // Admin Calendar specific navigation states
   const [calendarEmployeeId, setCalendarEmployeeId] = useState('usr-001-emp');
-  const [calendarMonthDate, setCalendarMonthDate] = useState(new Date(2026, 7, 1)); // August 2026
+  const [calendarYear, setCalendarYear] = useState(2026);
+  const [calendarMonth, setCalendarMonth] = useState(7); // August = 7
+
+  const calendarMonthDate = new Date(calendarYear, calendarMonth, 1);
 
   // Mark / Update Attendance Modal
   const [manualModalOpen, setManualModalOpen] = useState(false);
@@ -60,6 +73,16 @@ export const AllAttendancePage = () => {
     remarks: ''
   });
   const [savingManual, setSavingManual] = useState(false);
+
+  // Configure Planned Holidays Modal (for upcoming year holiday planning e.g. in September)
+  const [holidayModalOpen, setHolidayModalOpen] = useState(false);
+  const [holidayForm, setHolidayForm] = useState({
+    date: '2027-01-01',
+    name: '',
+    type: 'gazetted',
+    isNational: false,
+    description: ''
+  });
 
   const loadAttendance = async () => {
     setLoading(true);
@@ -89,7 +112,6 @@ export const AllAttendancePage = () => {
       const inISO = manualForm.checkInTime ? `${manualForm.date}T${manualForm.checkInTime}:00+05:30` : null;
       const outISO = manualForm.checkOutTime ? `${manualForm.date}T${manualForm.checkOutTime}:00+05:30` : null;
 
-      // Check if late (after 09:45)
       let isLate = false;
       if (manualForm.checkInTime) {
         const [hrs, mins] = manualForm.checkInTime.split(':').map(Number);
@@ -161,6 +183,25 @@ export const AllAttendancePage = () => {
       remarks: ''
     });
     setManualModalOpen(true);
+  };
+
+  // Handle Planned Holiday Addition (Annual Planner)
+  const handleSaveHoliday = (e) => {
+    e.preventDefault();
+    if (!holidayForm.name || !holidayForm.date) {
+      toast.error("Please provide holiday name and date");
+      return;
+    }
+    savePlannedHoliday(holidayForm);
+    toast.success(`Planned Holiday "${holidayForm.name}" added to corporate calendar!`);
+    setHolidayModalOpen(false);
+    setHolidayForm({
+      date: `${calendarYear}-01-01`,
+      name: '',
+      type: 'gazetted',
+      isNational: false,
+      description: ''
+    });
   };
 
   // Calculate duration
@@ -246,6 +287,7 @@ export const AllAttendancePage = () => {
 
   // Selected calendar employee
   const calendarUser = mockUsers.find(u => u.id === calendarEmployeeId) || mockUsers[0];
+  const plannedHolidaysForYear = getPlannedHolidays(calendarYear);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -255,15 +297,34 @@ export const AllAttendancePage = () => {
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Organization Attendance Management</h1>
             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200">
-              Admin & HR Manager
+              Admin & HR Operations
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Monitor employee attendance, separate HR/Manager calendars, and mark/update records with remarks
+            Multi-month attendance roster, annual corporate holiday planner, and manual attendance overrides
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start">
+        <div className="flex flex-wrap items-center gap-2 self-start">
+          <Button
+            variant="outline"
+            size="sm"
+            icon={Sparkles}
+            onClick={() => {
+              setHolidayForm({
+                date: `${calendarYear}-09-01`,
+                name: '',
+                type: 'gazetted',
+                isNational: false,
+                description: 'Annual corporate holiday update'
+              });
+              setHolidayModalOpen(true);
+            }}
+            className="border-purple-300 text-purple-800 hover:bg-purple-50 font-semibold"
+          >
+            Add Planned Holiday
+          </Button>
+
           <Button
             variant="outline"
             size="sm"
@@ -281,7 +342,7 @@ export const AllAttendancePage = () => {
               });
               setManualModalOpen(true);
             }}
-            className="border-purple-300 text-purple-800 hover:bg-purple-50 font-semibold"
+            className="border-slate-300 font-semibold"
           >
             Mark Attendance Manually
           </Button>
@@ -293,7 +354,7 @@ export const AllAttendancePage = () => {
             onClick={handleExportCSV}
             className="bg-slate-900 text-white hover:bg-slate-800 font-semibold"
           >
-            Export Logs (CSV)
+            Export CSV
           </Button>
         </div>
       </div>
@@ -337,7 +398,7 @@ export const AllAttendancePage = () => {
         />
       </div>
 
-      {/* Tab Switcher: Daily List vs Admin/HR Calendar */}
+      {/* Tab Switcher: Daily List vs Admin/HR Calendar vs Annual Planner */}
       <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
         <button
           onClick={() => setActiveTab('list')}
@@ -360,14 +421,25 @@ export const AllAttendancePage = () => {
           }`}
         >
           <Calendar className="w-3.5 h-3.5" />
-          Admin/HR Attendance Calendar
+          Admin Monthly Attendance Calendar
+        </button>
+
+        <button
+          onClick={() => setActiveTab('year-planner')}
+          className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-2 ${
+            activeTab === 'year-planner'
+              ? 'bg-purple-700 text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <CalendarRange className="w-3.5 h-3.5" />
+          {calendarYear} Corporate Annual Planner ({plannedHolidaysForYear.length} Holidays)
         </button>
       </div>
 
-      {/* TAB 1: Daily Attendance List with Filters */}
+      {/* TAB 1: Daily Attendance List with Multi-Filters */}
       {activeTab === 'list' && (
         <div className="space-y-4">
-          {/* Multi-Filter Bar */}
           <Card className="p-4 bg-white">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
               <div>
@@ -450,7 +522,6 @@ export const AllAttendancePage = () => {
             </div>
           </Card>
 
-          {/* Attendance Table */}
           <Card>
             <CardHeader
               title={`Attendance Logs (${selectedDate || 'All Dates'})`}
@@ -548,7 +619,7 @@ export const AllAttendancePage = () => {
         </div>
       )}
 
-      {/* TAB 2: Admin/HR/Manager Attendance Calendar */}
+      {/* TAB 2: Admin/HR/Manager Attendance Calendar with Multi-Month Stepper */}
       {activeTab === 'calendar' && (
         <div className="space-y-4">
           {/* Calendar Control Bar */}
@@ -571,12 +642,60 @@ export const AllAttendancePage = () => {
 
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                  Calendar Month
+                  Calendar Month & Year Navigation
                 </label>
-                <div className="flex items-center gap-2">
-                  <span className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 border border-slate-200 font-bold text-slate-800">
-                    {format(calendarMonthDate, 'MMMM yyyy')}
-                  </span>
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                  <button
+                    onClick={() => {
+                      if (calendarMonth === 0) {
+                        setCalendarMonth(11);
+                        setCalendarYear(prev => prev - 1);
+                      } else {
+                        setCalendarMonth(prev => prev - 1);
+                      }
+                    }}
+                    className="p-1 rounded-lg text-slate-700 hover:bg-white transition-all"
+                    title="Previous Month"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+
+                  <div className="flex items-center gap-1 px-1 flex-1 justify-center">
+                    <select
+                      value={calendarMonth}
+                      onChange={(e) => setCalendarMonth(Number(e.target.value))}
+                      className="bg-transparent font-bold text-slate-800 text-xs focus:outline-none cursor-pointer"
+                    >
+                      {MONTH_NAMES.map((name, idx) => (
+                        <option key={name} value={idx}>{name}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={calendarYear}
+                      onChange={(e) => setCalendarYear(Number(e.target.value))}
+                      className="bg-transparent font-bold text-slate-800 text-xs focus:outline-none cursor-pointer"
+                    >
+                      <option value={2025}>2025</option>
+                      <option value={2026}>2026</option>
+                      <option value={2027}>2027</option>
+                    </select>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      if (calendarMonth === 11) {
+                        setCalendarMonth(0);
+                        setCalendarYear(prev => prev + 1);
+                      } else {
+                        setCalendarMonth(prev => prev + 1);
+                      }
+                    }}
+                    className="p-1 rounded-lg text-slate-700 hover:bg-white transition-all"
+                    title="Next Month"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
 
@@ -585,7 +704,7 @@ export const AllAttendancePage = () => {
                   variant="primary"
                   size="md"
                   icon={Plus}
-                  onClick={() => handleOpenCreateForDate('2026-08-22', calendarEmployeeId)}
+                  onClick={() => handleOpenCreateForDate(`${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-15`, calendarEmployeeId)}
                   className="w-full bg-purple-700 hover:bg-purple-800"
                 >
                   Mark / Update for {calendarUser.name.split(' ')[0]}
@@ -600,7 +719,7 @@ export const AllAttendancePage = () => {
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-base font-bold text-slate-900">
-                    {calendarUser.name}'s Attendance Calendar ({format(calendarMonthDate, 'MMMM yyyy')})
+                    {calendarUser.name}'s Attendance Calendar ({MONTH_NAMES[calendarMonth]} {calendarYear})
                   </h3>
                   <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-purple-100 text-purple-800">
                     {calendarUser.employee_id} • {calendarUser.department}
@@ -666,7 +785,6 @@ export const AllAttendancePage = () => {
                         </span>
                       </div>
 
-                      {/* Content */}
                       <div className="mt-1">
                         {holiday ? (
                           <div className="text-[10px] font-bold text-purple-700 truncate" title={holiday.name}>
@@ -707,6 +825,175 @@ export const AllAttendancePage = () => {
           </Card>
         </div>
       )}
+
+      {/* TAB 3: Corporate Annual Holiday & Schedule Planner */}
+      {activeTab === 'year-planner' && (
+        <Card className="p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+            <div>
+              <h3 className="text-base font-bold text-slate-900">
+                {calendarYear} Corporate Annual Holiday Roster & Planning Hub
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Manage upcoming year gazetted holidays, corporate calendar publish dates (e.g. September release), and working schedules
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <select
+                value={calendarYear}
+                onChange={(e) => setCalendarYear(Number(e.target.value))}
+                className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold bg-white text-slate-800"
+              >
+                <option value={2025}>2025 Calendar</option>
+                <option value={2026}>2026 Calendar</option>
+                <option value={2027}>2027 Calendar (Next Year Planned)</option>
+              </select>
+
+              <Button
+                variant="primary"
+                size="sm"
+                icon={Plus}
+                onClick={() => {
+                  setHolidayForm({
+                    date: `${calendarYear}-09-01`,
+                    name: '',
+                    type: 'gazetted',
+                    isNational: false,
+                    description: ''
+                  });
+                  setHolidayModalOpen(true);
+                }}
+                className="bg-purple-700 hover:bg-purple-800"
+              >
+                Add Holiday to {calendarYear}
+              </Button>
+            </div>
+          </div>
+
+          {/* 12 Months Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {MONTH_NAMES.map((monthName, mIdx) => {
+              const mDate = new Date(calendarYear, mIdx, 1);
+              const mDays = eachDayOfInterval({ start: startOfMonth(mDate), end: endOfMonth(mDate) });
+              const mPrefix = `${calendarYear}-${String(mIdx + 1).padStart(2, '0')}`;
+              const mHolidays = plannedHolidaysForYear.filter(h => h.date.startsWith(mPrefix));
+              const mWorkDays = mDays.filter(d => !isWeekend(d) && !getIndianHoliday(format(d, 'yyyy-MM-dd'))).length;
+
+              return (
+                <div
+                  key={monthName}
+                  onClick={() => {
+                    setCalendarMonth(mIdx);
+                    setActiveTab('calendar');
+                  }}
+                  className="p-4 rounded-2xl border border-slate-200 bg-white hover:border-purple-300 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-bold text-slate-900 text-sm">{monthName}</h4>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800">
+                        {mWorkDays} Work Days
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5 my-3">
+                      {mHolidays.length > 0 ? (
+                        mHolidays.map(h => (
+                          <div key={h.date} className="flex items-center justify-between text-[11px] p-1.5 rounded-lg bg-purple-50 border border-purple-100">
+                            <span className="font-semibold text-purple-900 truncate max-w-[130px]">{h.name}</span>
+                            <span className="text-[10px] font-bold text-purple-700">{format(parseISO(h.date), 'dd MMM')}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-[11px] text-slate-400 italic py-1">No gazetted holidays</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                    <span className="text-purple-700 font-bold hover:underline">Inspect Month Calendar →</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {/* Add Planned Holiday Modal */}
+      <Modal
+        isOpen={holidayModalOpen}
+        onClose={() => setHolidayModalOpen(false)}
+        title={`Add Holiday to ${calendarYear} Corporate Calendar`}
+        subtitle="Configure company public & festive holidays for annual employee planning"
+      >
+        <form onSubmit={handleSaveHoliday} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+              Holiday Name *
+            </label>
+            <input
+              type="text"
+              required
+              value={holidayForm.name}
+              onChange={(e) => setHolidayForm({ ...holidayForm, name: e.target.value })}
+              placeholder="e.g. Ganesh Chaturthi / Corporate Annual Day"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-purple-600 focus:ring-2 focus:ring-purple-100 transition-all"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                Date *
+              </label>
+              <input
+                type="date"
+                required
+                value={holidayForm.date}
+                onChange={(e) => setHolidayForm({ ...holidayForm, date: e.target.value })}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-purple-600 focus:ring-2 focus:ring-purple-100 transition-all"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                Holiday Category
+              </label>
+              <select
+                value={holidayForm.type}
+                onChange={(e) => setHolidayForm({ ...holidayForm, type: e.target.value })}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-purple-600 focus:ring-2 focus:ring-purple-100 transition-all"
+              >
+                <option value="gazetted">Gazetted Public Holiday</option>
+                <option value="restricted">Restricted / Optional Holiday</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+              Description / Notes
+            </label>
+            <textarea
+              rows={2}
+              value={holidayForm.description}
+              onChange={(e) => setHolidayForm({ ...holidayForm, description: e.target.value })}
+              placeholder="Optional holiday significance or observance rules..."
+              className="w-full p-3 rounded-xl border border-slate-200 text-sm focus:border-purple-600 focus:ring-2 focus:ring-purple-100 transition-all"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+            <Button type="button" variant="ghost" onClick={() => setHolidayModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" className="bg-purple-700 hover:bg-purple-800">
+              Save Planned Holiday
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
       {/* Mark / Update Attendance Modal (with remarks) */}
       <Modal
