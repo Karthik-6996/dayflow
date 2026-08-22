@@ -4,26 +4,47 @@ import { leaveService } from './leaveService';
 import { payrollService } from './payrollService';
 import { attendanceService } from './attendanceService';
 
-const mockNotifications = [
-  {
-    id: 'notif-1',
-    user_id: 'usr-001-emp',
-    type: 'leave_approved',
-    title: 'Leave Approved',
-    message: 'Your Paid Leave request has been approved by HR.',
-    created_at: '2026-08-21T10:30:00Z',
-    is_read: false
-  },
-  {
-    id: 'notif-2',
-    user_id: 'usr-001-emp',
-    type: 'salary',
-    title: 'Monthly Salary Credited',
-    message: 'Your salary of ₹95,450 for August 2026 has been credited to your bank account.',
-    created_at: '2026-08-20T14:15:00Z',
-    is_read: false
+const NOTIF_STORAGE_KEY = 'dayflow_user_notifications_store';
+
+function getStoredNotifications() {
+  try {
+    const raw = localStorage.getItem(NOTIF_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.warn("Error reading stored notifications:", e);
   }
-];
+  return [];
+}
+
+function saveStoredNotifications(notifs) {
+  try {
+    localStorage.setItem(NOTIF_STORAGE_KEY, JSON.stringify(notifs));
+  } catch (e) {
+    console.warn("Error saving stored notifications:", e);
+  }
+}
+
+/**
+ * Add a new real-time notification to an employee's inbox (e.g. when Admin accepts/rejects a leave/holiday request)
+ */
+export function addNotification({ userId, type, title, message, priority = 'normal' }) {
+  const newNotif = {
+    id: `notif-user-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+    user_id: userId,
+    type, // 'leave_approved' | 'leave_rejected' | 'salary' | 'holiday'
+    title,
+    message,
+    timestamp: new Date().toISOString(),
+    unread: true,
+    priority
+  };
+
+  const stored = getStoredNotifications();
+  stored.unshift(newNotif);
+  saveStoredNotifications(stored);
+
+  return newNotif;
+}
 
 /**
  * Fetch real, dynamic notifications for the current logged-in employee
@@ -31,14 +52,20 @@ const mockNotifications = [
  */
 export async function getEmployeeNotifications(userId) {
   const notifications = [];
+  const storedList = getStoredNotifications();
+
+  // 1. Add user's explicit notifications from Admin actions
+  const userDirectNotifs = storedList.filter(n => !n.user_id || n.user_id === userId || n.user_id === 'usr-001-emp');
+  notifications.push(...userDirectNotifs);
 
   try {
-    // 1. Check Payroll / Salary events
+    // 2. Check Payroll / Salary events
     const { data: payroll } = await payrollService.getEmployeePayroll(userId);
     if (payroll && (payroll.net_salary || payroll.monthly_net)) {
       const netVal = payroll.monthly_net || payroll.net_salary || 95450;
       notifications.push({
         id: `notif-pay-${payroll.id || 'curr'}`,
+        user_id: userId,
         type: 'salary',
         title: 'Monthly Salary Credited',
         message: `Salary of ₹${Number(netVal).toLocaleString('en-IN')} for August 2026 has been credited to your bank account.`,
@@ -48,84 +75,94 @@ export async function getEmployeeNotifications(userId) {
       });
     }
 
-    // 2. Check Leave Requests events
+    // 3. Check Leave / Holiday Requests from leaveService
     const { data: leaves } = await leaveService.getEmployeeLeaves(userId);
     if (leaves && leaves.length > 0) {
-      leaves.slice(0, 4).forEach((leave) => {
+      leaves.forEach((leave) => {
+        const leaveLabel = leave.type ? `${leave.type.toUpperCase()} Leave` : 'Holiday / Time-Off';
+        const dateRange = `${leave.start_date}${leave.start_date !== leave.end_date ? ` to ${leave.end_date}` : ''}`;
+
         if (leave.status === 'approved') {
-          notifications.push({
-            id: `notif-leave-${leave.id}`,
-            type: 'leave_approved',
-            title: 'Leave Request Approved',
-            message: `Your ${leave.type} leave for ${leave.start_date} ${leave.start_date !== leave.end_date ? `to ${leave.end_date}` : ''} was approved by HR.`,
-            timestamp: leave.created_at || '2026-08-18T14:30:00+05:30',
-            unread: false,
-            priority: 'normal'
-          });
+          // Avoid duplicate if already in stored list
+          const exists = notifications.some(n => n.id === `notif-leave-${leave.id}`);
+          if (!exists) {
+            notifications.push({
+              id: `notif-leave-${leave.id}`,
+              user_id: userId,
+              type: 'leave_approved',
+              title: `🎉 ${leaveLabel} Approved`,
+              message: `Your request for ${dateRange} has been accepted by Admin.${leave.comments ? ` Note: "${leave.comments}"` : ''}`,
+              timestamp: leave.updated_at || leave.created_at || new Date().toISOString(),
+              unread: true,
+              priority: 'high'
+            });
+          }
         } else if (leave.status === 'rejected') {
-          notifications.push({
-            id: `notif-leave-${leave.id}`,
-            type: 'leave_rejected',
-            title: 'Leave Request Denied',
-            message: `Your ${leave.type} leave for ${leave.start_date} was not approved: "${leave.comments || 'Please contact HR'}".`,
-            timestamp: leave.created_at || '2026-08-17T11:20:00+05:30',
-            unread: true,
-            priority: 'high'
-          });
+          const exists = notifications.some(n => n.id === `notif-leave-${leave.id}`);
+          if (!exists) {
+            notifications.push({
+              id: `notif-leave-${leave.id}`,
+              user_id: userId,
+              type: 'leave_rejected',
+              title: `⚠️ ${leaveLabel} Declined`,
+              message: `Your request for ${dateRange} was not approved.${leave.comments ? ` Reason: "${leave.comments}"` : ''}`,
+              timestamp: leave.updated_at || leave.created_at || new Date().toISOString(),
+              unread: true,
+              priority: 'high'
+            });
+          }
         } else if (leave.status === 'pending') {
-          notifications.push({
-            id: `notif-leave-${leave.id}`,
-            type: 'leave_pending',
-            title: 'Leave Request Under Review',
-            message: `Your ${leave.type} leave application for ${leave.start_date} is currently pending HR review.`,
-            timestamp: leave.created_at || '2026-08-21T09:15:00+05:30',
-            unread: false,
-            priority: 'low'
-          });
+          const exists = notifications.some(n => n.id === `notif-leave-${leave.id}`);
+          if (!exists) {
+            notifications.push({
+              id: `notif-leave-${leave.id}`,
+              user_id: userId,
+              type: 'leave_pending',
+              title: `⏳ ${leaveLabel} Pending Approval`,
+              message: `Your request for ${dateRange} is currently awaiting Admin/HR review.`,
+              timestamp: leave.created_at || new Date().toISOString(),
+              unread: false,
+              priority: 'low'
+            });
+          }
         }
       });
     }
 
-    // 3. Check Attendance Regularization events if supported
-    if (attendanceService.getRegularizationRequests) {
-      const { data: regularizations } = await attendanceService.getRegularizationRequests({ userId });
-      if (regularizations && regularizations.length > 0) {
-        regularizations.slice(0, 2).forEach((reg) => {
-          if (reg.status === 'approved') {
-            notifications.push({
-              id: `notif-reg-${reg.id}`,
-              type: 'reg_approved',
-              title: 'Attendance Regularization Approved',
-              message: `Your punch regularization for ${reg.date} (${reg.requested_check_in || ''} - ${reg.requested_check_out || ''}) was approved.`,
-              timestamp: reg.created_at || '2026-08-19T16:45:00+05:30',
-              unread: false,
-              priority: 'normal'
-            });
-          }
-        });
-      }
-    }
-
-    // Add fallback mock notifications if empty
-    if (notifications.length === 0) {
-      mockNotifications.forEach(n => notifications.push({ ...n, timestamp: n.created_at }));
-    }
-
     // Sort by most recent
     notifications.sort((a, b) => new Date(b.timestamp || b.created_at) - new Date(a.timestamp || a.created_at));
-    return { data: notifications, error: null };
+
+    // Deduplicate by ID
+    const uniqueMap = new Map();
+    notifications.forEach(item => {
+      if (!uniqueMap.has(item.id)) {
+        uniqueMap.set(item.id, item);
+      }
+    });
+
+    return { data: Array.from(uniqueMap.values()), error: null };
   } catch (err) {
     console.error("Error generating notifications:", err);
-    return { data: mockNotifications, error: null };
+    return { data: notifications, error: err.message };
   }
 }
 
 export const notificationService = {
   getEmployeeNotifications,
+  addNotification,
   async markAsRead(notificationId) {
-    return { data: { id: notificationId, is_read: true }, error: null };
+    const stored = getStoredNotifications();
+    const target = stored.find(n => n.id === notificationId);
+    if (target) {
+      target.unread = false;
+      saveStoredNotifications(stored);
+    }
+    return { data: true, error: null };
   },
   async dismissNotification(notificationId) {
+    const stored = getStoredNotifications();
+    const updated = stored.filter(n => n.id !== notificationId);
+    saveStoredNotifications(updated);
     return { error: null };
   }
 };

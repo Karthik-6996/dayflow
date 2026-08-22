@@ -1,6 +1,7 @@
 // src/pages/admin/LeaveApprovalsPage.jsx
 import React, { useState, useEffect } from 'react';
 import { leaveService } from '../../services/leaveService';
+import { notificationService } from '../../services/notificationService';
 import { Card, CardHeader } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
@@ -80,6 +81,22 @@ export const LeaveApprovalsPage = () => {
         toast.success(`Leave request ${actionModal.action === 'approved' ? 'Approved' : 'Rejected'} successfully!`);
         // Immediate local state update
         setLeaves(prev => prev.map(l => l.id === actionModal.leave.id ? { ...l, status: actionModal.action, comments } : l));
+
+        // Push real-time notification to employee
+        const targetUserId = actionModal.leave.user_id;
+        const dateText = `${actionModal.leave.start_date}${actionModal.leave.start_date !== actionModal.leave.end_date ? ` to ${actionModal.leave.end_date}` : ''}`;
+        const leaveType = actionModal.leave.type ? `${actionModal.leave.type.toUpperCase()} Leave` : 'Holiday / Time-Off';
+
+        notificationService.addNotification({
+          userId: targetUserId,
+          type: actionModal.action === 'approved' ? 'leave_approved' : 'leave_rejected',
+          title: actionModal.action === 'approved' ? `🎉 ${leaveType} Approved` : `⚠️ ${leaveType} Declined`,
+          message: actionModal.action === 'approved'
+            ? `Your ${leaveType} for ${dateText} has been approved by Admin.${comments ? ` Note: "${comments}"` : ''}`
+            : `Your ${leaveType} for ${dateText} was declined.${comments ? ` Reason: "${comments}"` : ''}`,
+          priority: 'high'
+        });
+
         setActionModal(null);
         await loadData();
       }

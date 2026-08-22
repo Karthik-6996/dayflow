@@ -31,7 +31,10 @@ import {
   Check,
   Mail,
   Phone,
-  Plus
+  Plus,
+  ShieldCheck,
+  MessageSquare,
+  AlertTriangle
 } from 'lucide-react';
 import { format, parseISO, differenceInMinutes } from 'date-fns';
 import { toast } from 'sonner';
@@ -42,6 +45,7 @@ export const DashboardHome = () => {
   const [todayAttendance, setTodayAttendance] = useState(null);
   const [leaves, setLeaves] = useState([]);
   const [adminPendingLeaves, setAdminPendingLeaves] = useState([]);
+  const [payroll, setPayroll] = useState(null);
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // Attendance Punch State
@@ -58,6 +62,13 @@ export const DashboardHome = () => {
     remarks: ''
   });
 
+  // Admin Review / Reject Modal State
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  const [selectedLeaveForReview, setSelectedLeaveForReview] = useState(null);
+  const [reviewAction, setReviewAction] = useState('approved'); // 'approved' | 'rejected'
+  const [reviewComment, setReviewComment] = useState('');
+  const [submittingReview, setSubmittingReview] = useState(false);
+
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
@@ -68,7 +79,7 @@ export const DashboardHome = () => {
     try {
       const today = new Date().toISOString().split('T')[0];
 
-      // 1. Fetch Notifications
+      // 1. Fetch Dynamic Employee Notifications
       const { data: notifData } = await notificationService.getEmployeeNotifications(currentUser.id);
       setNotifications(notifData || []);
 
@@ -80,7 +91,11 @@ export const DashboardHome = () => {
       const { data: leavesData } = await leaveService.getEmployeeLeaves(currentUser.id);
       setLeaves(leavesData || []);
 
-      // 4. If Admin, fetch all pending leave requests for review
+      // 4. Fetch Payroll Summary
+      const { data: payData } = await payrollService.getEmployeePayroll(currentUser.id);
+      setPayroll(payData || null);
+
+      // 5. If Admin, fetch all pending leave & holiday requests
       if (isAdmin) {
         const { data: allLeaves } = await leaveService.getAllLeaves({ status: 'pending' });
         setAdminPendingLeaves(allLeaves || []);
@@ -141,7 +156,7 @@ export const DashboardHome = () => {
       const diffTime = Math.abs(end - s);
       const count = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1);
 
-      const { error } = await leaveService.submitLeaveRequest({
+      const { data, error } = await leaveService.submitLeaveRequest({
         userId: currentUser.id,
         type: leaveForm.type,
         startDate: leaveForm.startDate,
@@ -153,7 +168,7 @@ export const DashboardHome = () => {
       if (error) {
         toast.error(error);
       } else {
-        toast.success("Leave request submitted for HR approval!");
+        toast.success("Leave / Holiday request submitted for Admin review!");
         if (data) {
           setLeaves(prev => [data, ...prev.filter(p => p.id !== data.id)]);
         }
@@ -166,19 +181,87 @@ export const DashboardHome = () => {
     }
   };
 
-  // Admin Quick Review
-  const handleAdminReviewLeave = async (leaveId, status) => {
+  // Open Admin Review Modal for quick comments
+  const handleOpenReviewModal = (leave, action) => {
+    setSelectedLeaveForReview(leave);
+    setReviewAction(action);
+    setReviewComment(
+      action === 'approved'
+        ? 'Approved by Admin: Have a good time off!'
+        : 'Declined: Please coordinate with your team lead regarding critical milestones.'
+    );
+    setReviewModalOpen(true);
+  };
+
+  // Execute Admin Approval or Rejection
+  const handleConfirmAdminReview = async (e) => {
+    e?.preventDefault();
+    if (!selectedLeaveForReview) return;
+    setSubmittingReview(true);
     try {
-      const comments = status === 'approved' ? 'Approved by Admin' : 'Declined per schedule';
+      const leaveId = selectedLeaveForReview.id;
+      const status = reviewAction;
+      const comments = reviewComment.trim();
+
+      // 1. Update status in leave database
       await leaveService.updateLeaveStatus(leaveId, { status, comments });
-      toast.success(`Leave request ${status === 'approved' ? 'Approved' : 'Rejected'}!`);
+
+      // 2. Generate and push real-time notification to employee
+      const targetUserId = selectedLeaveForReview.user_id;
+      const dateText = `${selectedLeaveForReview.start_date}${selectedLeaveForReview.start_date !== selectedLeaveForReview.end_date ? ` to ${selectedLeaveForReview.end_date}` : ''}`;
+      const leaveType = selectedLeaveForReview.type ? `${selectedLeaveForReview.type.toUpperCase()} Leave` : 'Holiday / Time-Off';
+
+      notificationService.addNotification({
+        userId: targetUserId,
+        type: status === 'approved' ? 'leave_approved' : 'leave_rejected',
+        title: status === 'approved' ? `🎉 ${leaveType} Request Approved` : `⚠️ ${leaveType} Request Declined`,
+        message: status === 'approved'
+          ? `Your ${leaveType} for ${dateText} has been approved by Admin.${comments ? ` Note: "${comments}"` : ''}`
+          : `Your ${leaveType} for ${dateText} was declined.${comments ? ` Reason: "${comments}"` : ''}`,
+        priority: 'high'
+      });
+
+      toast.success(
+        status === 'approved'
+          ? `Holiday / Leave request accepted! Notification sent to employee.`
+          : `Holiday / Leave request rejected! Reason sent to employee.`
+      );
+
+      setReviewModalOpen(false);
+      setSelectedLeaveForReview(null);
+      await loadDashboardData();
+    } catch (err) {
+      toast.error("Failed to process leave review");
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
+  // 1-Click Quick Accept for Admin
+  const handleQuickApprove = async (leave) => {
+    setSelectedLeaveForReview(leave);
+    setReviewAction('approved');
+    setReviewComment('Approved by Admin');
+    try {
+      await leaveService.updateLeaveStatus(leave.id, { status: 'approved', comments: 'Approved by Admin' });
+
+      notificationService.addNotification({
+        userId: leave.user_id,
+        type: 'leave_approved',
+        title: `🎉 ${leave.type?.toUpperCase() || 'Holiday'} Leave Approved`,
+        message: `Your request for ${leave.start_date} to ${leave.end_date} was approved by Admin.`,
+        priority: 'high'
+      });
+
+      toast.success("Leave request accepted! Notification dispatched to employee.");
       await loadDashboardData();
     } catch (e) {
-      toast.error("Failed to update leave status");
+      toast.error("Error approving request");
     }
   };
 
   const handleDismissNotification = (id) => {
+    notificationService.dismissNotification(id);
     setNotifications(prev => prev.filter(n => n.id !== id));
   };
 
@@ -199,17 +282,20 @@ export const DashboardHome = () => {
   return (
     <div className="space-y-6 animate-fade-in text-zinc-900 dark:text-zinc-100 max-w-7xl mx-auto">
       {/* ─────────────────────────────────────────────────────────────
-          1. EMPLOYEE NOTIFICATIONS SECTION (TOP OF DASHBOARD)
+          1. REAL-TIME EMPLOYEE NOTIFICATIONS BANNER (TOP OF DASHBOARD)
       ───────────────────────────────────────────────────────────── */}
       {notifications.length > 0 && (
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           <div className="flex items-center justify-between px-1">
             <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 flex items-center gap-1.5">
-              <Bell className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
-              HR Notifications & Updates ({notifications.length})
+              <Bell className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 animate-pulse" />
+              Notifications & Admin Decisions ({notifications.length})
             </h2>
             <button
-              onClick={() => setNotifications([])}
+              onClick={() => {
+                notifications.forEach(n => notificationService.dismissNotification(n.id));
+                setNotifications([]);
+              }}
               className="text-[11px] font-semibold text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 cursor-pointer"
             >
               Clear All
@@ -220,33 +306,46 @@ export const DashboardHome = () => {
             {notifications.map((notif) => (
               <div
                 key={notif.id}
-                className={`p-3.5 rounded-2xl border flex items-start justify-between gap-3 shadow-2xs transition-all ${
-                  notif.type === 'salary'
-                    ? 'bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60'
-                    : notif.type === 'leave_approved' || notif.type === 'reg_approved'
-                    ? 'bg-teal-50/80 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800/60'
+                className={`p-4 rounded-2xl border flex items-start justify-between gap-3 shadow-2xs transition-all ${
+                  notif.type === 'leave_approved'
+                    ? 'bg-emerald-50/90 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700/80 ring-1 ring-emerald-400/20'
                     : notif.type === 'leave_rejected'
-                    ? 'bg-rose-50/80 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/60'
-                    : 'bg-blue-50/80 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800/60'
+                    ? 'bg-rose-50/90 dark:bg-rose-950/40 border-rose-300 dark:border-rose-700/80 ring-1 ring-rose-400/20'
+                    : notif.type === 'salary'
+                    ? 'bg-teal-50/90 dark:bg-teal-950/40 border-teal-300 dark:border-teal-700/80'
+                    : 'bg-blue-50/90 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800/60'
                 }`}
               >
-                <div className="flex items-start gap-2.5">
-                  <span className={`p-1.5 rounded-xl shrink-0 mt-0.5 ${
-                    notif.type === 'salary'
+                <div className="flex items-start gap-3">
+                  <span className={`p-2 rounded-xl shrink-0 mt-0.5 ${
+                    notif.type === 'leave_approved'
                       ? 'bg-emerald-600 text-white'
-                      : notif.type === 'leave_approved' || notif.type === 'reg_approved'
-                      ? 'bg-teal-600 text-white'
                       : notif.type === 'leave_rejected'
                       ? 'bg-rose-600 text-white'
+                      : notif.type === 'salary'
+                      ? 'bg-teal-600 text-white'
                       : 'bg-blue-600 text-white'
                   }`}>
-                    {notif.type === 'salary' ? <CreditCard className="w-3.5 h-3.5" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    {notif.type === 'leave_approved' ? (
+                      <Check className="w-4 h-4" />
+                    ) : notif.type === 'leave_rejected' ? (
+                      <X className="w-4 h-4" />
+                    ) : notif.type === 'salary' ? (
+                      <CreditCard className="w-4 h-4" />
+                    ) : (
+                      <Sparkles className="w-4 h-4" />
+                    )}
                   </span>
                   <div>
-                    <h4 className="text-xs font-bold text-zinc-900 dark:text-white leading-tight">
-                      {notif.title}
-                    </h4>
-                    <p className="text-xs text-zinc-700 dark:text-zinc-300 mt-0.5 leading-relaxed">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-xs font-bold text-zinc-900 dark:text-white leading-tight">
+                        {notif.title}
+                      </h4>
+                      {notif.unread && (
+                        <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" title="New notification" />
+                      )}
+                    </div>
+                    <p className="text-xs text-zinc-700 dark:text-zinc-300 mt-1 leading-relaxed">
                       {notif.message}
                     </p>
                   </div>
@@ -255,9 +354,9 @@ export const DashboardHome = () => {
                 <button
                   onClick={() => handleDismissNotification(notif.id)}
                   className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 p-1 rounded-lg transition cursor-pointer"
-                  title="Dismiss"
+                  title="Dismiss Notification"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
             ))}
@@ -284,10 +383,10 @@ export const DashboardHome = () => {
           color="teal"
         />
         <StatCard
-          title="Shift Schedule"
-          value="09:30 - 18:30"
-          subtitle="General Shift (IST) • Mon-Fri"
-          icon={Clock}
+          title="Monthly Net Salary"
+          value={payroll ? `₹${payroll.net_salary?.toLocaleString('en-IN')}` : '₹95,450'}
+          subtitle={`CTC Base ₹${payroll?.base_salary?.toLocaleString('en-IN') || '1,10,000'}`}
+          icon={CreditCard}
           color="blue"
         />
         <StatCard
@@ -445,7 +544,7 @@ export const DashboardHome = () => {
                   <Plane className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-zinc-900 dark:text-white">My Leave Requests</h3>
+                  <h3 className="text-sm font-bold text-zinc-900 dark:text-white">My Leave & Holiday Requests</h3>
                   <p className="text-[11px] text-zinc-500">Track pending, approved, and rejected applications</p>
                 </div>
               </div>
@@ -509,69 +608,158 @@ export const DashboardHome = () => {
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          5. ADMIN / HR PENDING LEAVE APPROVALS REVIEW (FOR ADMINS)
+          5. ADMIN / HR HOLIDAY & LEAVE APPROVALS REVIEW (ADMIN DASHBOARD)
       ───────────────────────────────────────────────────────────── */}
-      {isAdmin && adminPendingLeaves.length > 0 && (
+      {isAdmin && (
         <Card className="p-6">
-          <CardHeader
-            title="Employee Leave Requests Awaiting Review"
-            subtitle={`Showing ${adminPendingLeaves.length} pending employee applications`}
-          />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-zinc-100 dark:border-zinc-800">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-bold text-zinc-900 dark:text-white flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-purple-600" />
+                  Staff Holiday & Leave Requests Awaiting Approval
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                  {adminPendingLeaves.length} Pending
+                </span>
+              </div>
+              <p className="text-xs text-zinc-500 mt-0.5">
+                Review employee holiday/leave requests. Decisions immediately update records and send push notifications to employees.
+              </p>
+            </div>
 
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Employee</TableHead>
-                <TableHead>Leave Type</TableHead>
-                <TableHead>Dates</TableHead>
-                <TableHead>Remarks / Reason</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {adminPendingLeaves.map((l) => (
-                <TableRow key={l.id}>
-                  <TableCell>
-                    <div>
-                      <p className="font-semibold text-zinc-900 dark:text-white text-xs">{l.users?.name || 'Employee'}</p>
-                      <p className="text-[10px] text-zinc-400 font-mono">{l.users?.employee_id || 'DF-1000'} • {l.users?.department}</p>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={l.type}>{l.type} Leave</Badge>
-                  </TableCell>
-                  <TableCell className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                    {l.start_date} to {l.end_date}
-                  </TableCell>
-                  <TableCell className="text-xs text-zinc-600 dark:text-zinc-400 max-w-xs truncate">
-                    {l.remarks || '—'}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="pending">Pending</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <button
-                        onClick={() => handleAdminReviewLeave(l.id, 'approved')}
-                        className="px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition flex items-center gap-1 shadow-2xs cursor-pointer"
-                      >
-                        <Check className="w-3 h-3" /> Approve
-                      </button>
-                      <button
-                        onClick={() => handleAdminReviewLeave(l.id, 'rejected')}
-                        className="px-2.5 py-1 text-xs font-bold rounded-lg bg-rose-600 text-white hover:bg-rose-700 transition flex items-center gap-1 shadow-2xs cursor-pointer"
-                      >
-                        <X className="w-3 h-3" /> Reject
-                      </button>
-                    </div>
-                  </TableCell>
+            <Link to="/dashboard/admin/leaves">
+              <Button variant="outline" size="sm">
+                Open Full Approvals Portal <ArrowRight className="w-3.5 h-3.5 ml-1" />
+              </Button>
+            </Link>
+          </div>
+
+          {adminPendingLeaves.length === 0 ? (
+            <div className="py-10 text-center text-xs text-zinc-400">
+              ✓ All employee holiday and leave requests have been reviewed and resolved.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Employee</TableHead>
+                  <TableHead>Leave Type</TableHead>
+                  <TableHead>Dates & Duration</TableHead>
+                  <TableHead>Remarks / Reason</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {adminPendingLeaves.map((l) => (
+                  <TableRow key={l.id}>
+                    <TableCell>
+                      <div>
+                        <p className="font-bold text-zinc-900 dark:text-white text-xs">{l.users?.name || 'Staff Member'}</p>
+                        <p className="text-[10px] text-zinc-400 font-mono">{l.users?.employee_id || 'DF-1000'} • {l.users?.department}</p>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={l.type}>{l.type} Leave</Badge>
+                    </TableCell>
+                    <TableCell className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+                      {l.start_date} {l.start_date !== l.end_date && `to ${l.end_date}`}
+                      <span className="block text-[10px] text-zinc-400 font-normal">
+                        ({l.days || l.days_count || 1} {(l.days || l.days_count || 1) === 1 ? 'day' : 'days'})
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-xs text-zinc-600 dark:text-zinc-400 max-w-xs truncate">
+                      {l.remarks || '—'}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="pending">Pending Review</Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleQuickApprove(l)}
+                          className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition flex items-center gap-1 shadow-2xs cursor-pointer"
+                        >
+                          <Check className="w-3.5 h-3.5" /> Accept
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenReviewModal(l, 'rejected')}
+                          className="px-3 py-1.5 text-xs font-bold rounded-lg bg-rose-600 text-white hover:bg-rose-700 transition flex items-center gap-1 shadow-2xs cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" /> Reject
+                        </button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </Card>
       )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          MODAL: ADMIN REVIEW & COMMENTS (ACCEPT / REJECT)
+      ───────────────────────────────────────────────────────────── */}
+      <Modal
+        isOpen={reviewModalOpen}
+        onClose={() => setReviewModalOpen(false)}
+        title={reviewAction === 'approved' ? "Accept Holiday / Leave Request" : "Reject Holiday / Leave Request"}
+        subtitle={`Employee: ${selectedLeaveForReview?.users?.name || 'Staff Member'} (${selectedLeaveForReview?.start_date} to ${selectedLeaveForReview?.end_date})`}
+      >
+        <form onSubmit={handleConfirmAdminReview} className="space-y-4 text-xs">
+          <div className={`p-3 rounded-xl border flex items-center gap-2.5 ${
+            reviewAction === 'approved'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+              : 'bg-rose-50 text-rose-800 border-rose-200'
+          }`}>
+            {reviewAction === 'approved' ? (
+              <Check className="w-4 h-4 text-emerald-600" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-rose-600" />
+            )}
+            <div>
+              <p className="font-bold">
+                {reviewAction === 'approved' ? "Confirm Acceptance" : "Provide Rejection Reason"}
+              </p>
+              <p className="text-[11px] opacity-90">
+                A high-priority notification with your comment will be delivered to the employee dashboard.
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <label className="block font-semibold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider mb-1.5">
+              Admin Comment / Feedback for Employee *
+            </label>
+            <textarea
+              required
+              rows={3}
+              value={reviewComment}
+              onChange={(e) => setReviewComment(e.target.value)}
+              placeholder="e.g. Approved per schedule / Declined due to quarterly release sprint..."
+              className="w-full p-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-sm focus:border-teal-600"
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+            <Button type="button" variant="ghost" onClick={() => setReviewModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              loading={submittingReview}
+              className={reviewAction === 'approved' ? "bg-emerald-600 hover:bg-emerald-700 font-bold" : "bg-rose-600 hover:bg-rose-700 font-bold"}
+            >
+              {reviewAction === 'approved' ? "Confirm Acceptance" : "Confirm Rejection"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
       {/* ─────────────────────────────────────────────────────────────
           MODAL: APPLY FOR LEAVE
@@ -579,7 +767,7 @@ export const DashboardHome = () => {
       <Modal
         isOpen={isLeaveModalOpen}
         onClose={() => setIsLeaveModalOpen(false)}
-        title="Apply for Leave"
+        title="Apply for Leave / Holiday"
         subtitle="Select leave type, choose date range, and add remarks"
       >
         <form onSubmit={handleSubmitLeave} className="space-y-4 text-xs">
@@ -633,7 +821,7 @@ export const DashboardHome = () => {
               rows={3}
               value={leaveForm.remarks}
               onChange={(e) => setLeaveForm({ ...leaveForm, remarks: e.target.value })}
-              placeholder="e.g. Attending a family wedding, personal work..."
+              placeholder="e.g. Attending a family function, festival holiday..."
               className="w-full p-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-sm focus:border-teal-600"
             />
           </div>
