@@ -25,11 +25,12 @@ import {
   DollarSign
 } from 'lucide-react';
 import { toast } from 'sonner';
-
+import { useAuth } from '../../contexts/AuthContext';
 import { IS_MOCK } from '../../services/supabaseClient';
 import { mockUsers } from '../../mocks/users';
 
 export const EmployeeDirectory = () => {
+  const { currentUser, isAdmin } = useAuth();
   const [employees, setEmployees] = useState(IS_MOCK ? (mockUsers || []) : []);
   const [attendances, setAttendances] = useState([]);
   const [leaves, setLeaves] = useState([]);
@@ -114,6 +115,10 @@ export const EmployeeDirectory = () => {
 
   const handleCreateEmployee = async (e) => {
     e.preventDefault();
+    if (!isAdmin) {
+      toast.error("Unauthorized: Only Administrators and HR Officers can create employee accounts.");
+      return;
+    }
     setCreating(true);
     try {
       const { data, initialPassword, loginId, error } = await userService.createEmployee({
@@ -167,20 +172,25 @@ export const EmployeeDirectory = () => {
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">Employees</h1>
             <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700">
-              Odoo Directory
+              {isAdmin ? 'Admin Management' : 'Employee Directory'}
             </span>
           </div>
           <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-            Click on any employee card to open their profile in view-only or edit mode
+            {isAdmin 
+              ? 'Provision new employee profiles, generate Login IDs, and manage personnel records' 
+              : 'View organization colleagues and basic contact profiles in view-only mode'}
           </p>
         </div>
 
-        <button
-          onClick={() => setIsAddModalOpen(true)}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-zinc-900 dark:bg-white hover:bg-zinc-800 dark:hover:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-semibold transition cursor-pointer self-start sm:self-auto shadow-xs"
-        >
-          <UserPlus className="w-4 h-4" /> New Employee
-        </button>
+        {/* New Employee Action (Admin / HR Only) */}
+        {isAdmin && (
+          <button
+            onClick={() => setIsAddModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-zinc-900 dark:bg-white hover:bg-zinc-800 dark:hover:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-semibold transition cursor-pointer self-start sm:self-auto shadow-xs"
+          >
+            <UserPlus className="w-4 h-4" /> New Employee
+          </button>
+        )}
       </div>
 
       {/* Generated Credentials Success Alert Dialog */}
