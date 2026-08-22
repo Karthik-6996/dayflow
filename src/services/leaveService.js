@@ -12,9 +12,6 @@ export const INITIAL_LEAVE_BALANCES = {
 
 function getMockEmployeeLeaves(userId) {
   let leaves = mockLeaveRequests.filter(l => l.user_id === userId);
-  if (leaves.length === 0) {
-    leaves = mockLeaveRequests.filter(l => l.user_id === 'usr-001-emp').map(l => ({ ...l, user_id: userId }));
-  }
   leaves.sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
   return leaves;
 }
