@@ -14,6 +14,7 @@ import { SignupPage } from './pages/auth/SignupPage';
 import { VerifyEmailPage } from './pages/auth/VerifyEmailPage';
 
 // Main Application Pages (Odoo Wireframe Modules)
+import { DashboardHome } from './pages/employee/DashboardHome';
 import { EmployeeDirectory } from './pages/admin/EmployeeDirectory';
 import { AttendancePage } from './pages/employee/AttendancePage';
 import { LeavesPage } from './pages/employee/LeavesPage';
@@ -28,7 +29,7 @@ import { useAuth } from './contexts/AuthContext';
 
 function DashboardRedirect() {
   const { isAdmin } = useAuth();
-  return <Navigate to={isAdmin ? "/dashboard/employees" : "/dashboard/attendance"} replace />;
+  return isAdmin ? <Navigate to="/dashboard/employees" replace /> : <DashboardHome />;
 }
 
 export default function App() {
