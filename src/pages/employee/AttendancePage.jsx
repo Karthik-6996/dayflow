@@ -192,12 +192,6 @@ export const AttendancePage = () => {
   const lateDays = attendanceRecords.filter(r => r.is_late).length;
   const wfhDays = attendanceRecords.filter(r => r.work_mode === WORK_MODES.WFH).length;
 
-  const isFutureMonth = currentMonthStr > '2026-08';
-  const isPastMonth = currentMonthStr < '2026-08';
-
-  // Planned holidays for the selected year
-  const plannedHolidaysForYear = getPlannedHolidays(selectedYear);
-
   return (
     <div className="space-y-6 animate-fade-in text-zinc-900 dark:text-zinc-100">
       {/* Top Banner with Clock & Live Punch Console */}
