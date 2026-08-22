@@ -115,7 +115,7 @@ export const payrollService = {
         .from('salary_profiles')
         .select('*')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
 
       if (error || !data) {
         return this.getMockEmployeeSalaryProfile(userId);
