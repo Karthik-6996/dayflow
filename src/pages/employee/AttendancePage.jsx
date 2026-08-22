@@ -87,6 +87,29 @@ export const AttendancePage = () => {
 
   const todayRecord = attendanceRecords.find(r => r.date === todayStr);
 
+  // Sync workMode with today's record if present
+  useEffect(() => {
+    if (todayRecord?.work_mode) {
+      setWorkMode(todayRecord.work_mode);
+    }
+  }, [todayRecord]);
+
+  const handleWorkModeChange = async (newMode) => {
+    setWorkMode(newMode);
+    if (todayRecord?.id) {
+      setActionLoading(true);
+      try {
+        await attendanceService.updateWorkMode(todayRecord.id, newMode);
+        toast.success(`Work Mode updated to ${WORK_MODE_LABELS[newMode] || newMode}`);
+        await loadData();
+      } catch (e) {
+        toast.error("Failed to update work mode");
+      } finally {
+        setActionLoading(false);
+      }
+    }
+  };
+
   const handleCheckIn = async () => {
     setActionLoading(true);
     try {
@@ -98,8 +121,38 @@ export const AttendancePage = () => {
         toast.error(error);
       } else {
         toast.success(`Punched In successfully (${WORK_MODE_LABELS[workMode]})!`);
+        setIsOnBreak(false);
         await loadData();
       }
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReopenShift = async () => {
+    if (!todayRecord) return;
+    setActionLoading(true);
+    try {
+      await attendanceService.reopenShift(todayRecord.id);
+      toast.success("Shift resumed! You are now Punched In.");
+      await loadData();
+    } catch (e) {
+      toast.error("Failed to reopen shift");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleResetToday = async () => {
+    setActionLoading(true);
+    try {
+      await attendanceService.resetTodayAttendance(currentUser.id);
+      setIsOnBreak(false);
+      setSessionBreakMinutes(0);
+      toast.success("Today's punch reset! You can now test punching in afresh.");
+      await loadData();
+    } catch (e) {
+      toast.error("Failed to reset attendance");
     } finally {
       setActionLoading(false);
     }
@@ -115,7 +168,7 @@ export const AttendancePage = () => {
       if (error) {
         toast.error(error);
       } else {
-        toast.success("Punched Out successfully! Shift completed.");
+        toast.success("Punched Out successfully! Shift marked as completed.");
         setIsOnBreak(false);
         await loadData();
       }
@@ -125,16 +178,24 @@ export const AttendancePage = () => {
   };
 
   const handleToggleBreak = async () => {
-    if (!todayRecord) return;
+    if (!todayRecord) {
+      toast.info("Please punch in first before taking a break.");
+      return;
+    }
+    if (todayRecord.check_out_time) {
+      toast.info("Shift is already completed. Resume shift to log breaks.");
+      return;
+    }
+
     if (!isOnBreak) {
       setIsOnBreak(true);
-      toast.info("Break started (Timer paused)");
+      toast.info("Break started (Working timer paused) ☕");
     } else {
       setIsOnBreak(false);
       const addedBreak = 15;
       setSessionBreakMinutes(prev => prev + addedBreak);
       await attendanceService.recordBreak(todayRecord.id, addedBreak);
-      toast.success("Resumed work! Break logged.");
+      toast.success("Resumed work! 15m break logged.");
       await loadData();
     }
   };
@@ -192,129 +253,190 @@ export const AttendancePage = () => {
   const lateDays = attendanceRecords.filter(r => r.is_late).length;
   const wfhDays = attendanceRecords.filter(r => r.work_mode === WORK_MODES.WFH).length;
 
+  const isCheckedIn = !!todayRecord?.check_in_time;
+  const isCheckedOut = !!todayRecord?.check_out_time;
+
   return (
     <div className="space-y-6 animate-fade-in text-zinc-900 dark:text-zinc-100">
       {/* Top Banner with Clock & Live Punch Console */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Punch In/Out Card */}
-        <Card className="lg:col-span-2 p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-zinc-100 dark:border-zinc-800">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">Daily Punch Console</h2>
+        <Card className="lg:col-span-2 p-6 flex flex-col justify-between">
+          <div>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-zinc-100 dark:border-zinc-800">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className={`w-2.5 h-2.5 rounded-full ${isCheckedIn && !isCheckedOut ? 'bg-emerald-500 animate-pulse' : isCheckedOut ? 'bg-blue-500' : 'bg-amber-500'}`} />
+                  <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">Daily Punch Console</h2>
+                  <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
+                    Live Shift
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                  Standard General Shift (09:30 – 18:30 IST) • 15m Grace Time
+                </p>
               </div>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                Standard General Shift (09:30 – 18:30 IST) • 15m Grace Time
-              </p>
+
+              {/* Current Real-Time Clock */}
+              <div className="text-left sm:text-right">
+                <span className="font-mono text-xl font-bold tracking-tight text-zinc-900 dark:text-white">
+                  {format(currentTime, 'hh:mm:ss a')}
+                </span>
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-medium">
+                  {format(currentTime, 'EEEE, dd MMMM yyyy')}
+                </p>
+              </div>
             </div>
 
-            {/* Current Real-Time Clock */}
-            <div className="text-left sm:text-right">
-              <span className="font-mono text-xl font-bold tracking-tight text-zinc-900 dark:text-white">
-                {format(currentTime, 'hh:mm:ss a')}
-              </span>
-              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-medium">
-                {format(currentTime, 'EEEE, dd MMMM yyyy')}
-              </p>
-            </div>
-          </div>
+            {/* Work Mode Selection & Status */}
+            <div className="mt-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                {/* Work mode selector */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-zinc-500 dark:text-zinc-400 font-medium">Work Mode:</span>
+                  <div className="inline-flex rounded-lg p-0.5 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
+                    <button
+                      type="button"
+                      onClick={() => handleWorkModeChange(WORK_MODES.OFFICE)}
+                      className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                        workMode === WORK_MODES.OFFICE
+                          ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs font-bold'
+                          : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                      }`}
+                    >
+                      <Building className="w-3.5 h-3.5" /> Office
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleWorkModeChange(WORK_MODES.WFH)}
+                      className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                        workMode === WORK_MODES.WFH
+                          ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs font-bold'
+                          : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                      }`}
+                    >
+                      <Laptop className="w-3.5 h-3.5" /> WFH
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleWorkModeChange(WORK_MODES.CLIENT_SITE)}
+                      className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                        workMode === WORK_MODES.CLIENT_SITE
+                          ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs font-bold'
+                          : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                      }`}
+                    >
+                      <Briefcase className="w-3.5 h-3.5" /> Client
+                    </button>
+                  </div>
+                </div>
 
-          {/* Work Mode Selection & Status */}
-          <div className="mt-5 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="text-zinc-500 dark:text-zinc-400 font-medium">Work Mode:</span>
-                <div className="inline-flex rounded-lg p-0.5 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
-                  <button
-                    type="button"
-                    disabled={!!todayRecord?.check_in_time}
-                    onClick={() => setWorkMode(WORK_MODES.OFFICE)}
-                    className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
-                      workMode === WORK_MODES.OFFICE
-                        ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs'
-                        : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900'
-                    }`}
-                  >
-                    <Building className="w-3.5 h-3.5" /> Office
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!!todayRecord?.check_in_time}
-                    onClick={() => setWorkMode(WORK_MODES.WFH)}
-                    className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
-                      workMode === WORK_MODES.WFH
-                        ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs'
-                        : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900'
-                    }`}
-                  >
-                    <Laptop className="w-3.5 h-3.5" /> WFH
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!!todayRecord?.check_in_time}
-                    onClick={() => setWorkMode(WORK_MODES.CLIENT_SITE)}
-                    className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
-                      workMode === WORK_MODES.CLIENT_SITE
-                        ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs'
-                        : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900'
-                    }`}
-                  >
-                    <Briefcase className="w-3.5 h-3.5" /> Client
-                  </button>
+                {/* Status Badge */}
+                <div className="flex items-center gap-2">
+                  <span className="text-zinc-500 dark:text-zinc-400 font-medium">Status:</span>
+                  {isOnBreak ? (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 animate-pulse flex items-center gap-1">
+                      <Coffee className="w-3 h-3" /> On Break
+                    </span>
+                  ) : todayRecord ? (
+                    <Badge variant={todayRecord.status}>{todayRecord.status}</Badge>
+                  ) : (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
+                      Not Punched In
+                    </span>
+                  )}
                 </div>
               </div>
 
-              {/* Status Badge */}
-              <div className="flex items-center gap-2">
-                <span className="text-zinc-500 dark:text-zinc-400 font-medium">Status:</span>
-                {todayRecord ? (
-                  <Badge variant={todayRecord.status}>{todayRecord.status}</Badge>
+              {/* Action Buttons with Full Interactive Workflow */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                {/* Check In / In Progress / Resume Button */}
+                {!isCheckedIn ? (
+                  <button
+                    type="button"
+                    disabled={actionLoading}
+                    onClick={handleCheckIn}
+                    className="py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm transition flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-emerald-600/20 active:scale-[0.98]"
+                  >
+                    <Play className="w-4 h-4 fill-current" />
+                    Punch In
+                  </button>
+                ) : !isCheckedOut ? (
+                  <div className="py-3.5 px-4 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    Punched In ({format(parseISO(todayRecord.check_in_time), 'hh:mm a')})
+                  </div>
                 ) : (
-                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
-                    Not Punched In
-                  </span>
+                  <button
+                    type="button"
+                    disabled={actionLoading}
+                    onClick={handleReopenShift}
+                    className="py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm transition flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-emerald-600/20 active:scale-[0.98]"
+                    title="Resume or reopen shift session"
+                  >
+                    <Play className="w-4 h-4 fill-current" />
+                    Punch In (Resume)
+                  </button>
+                )}
+
+                {/* Break Button */}
+                <button
+                  type="button"
+                  disabled={actionLoading || !isCheckedIn || isCheckedOut}
+                  onClick={handleToggleBreak}
+                  className={`py-3.5 px-4 rounded-xl font-bold text-xs sm:text-sm transition border flex items-center justify-center gap-2 ${
+                    !isCheckedIn || isCheckedOut
+                      ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 border-zinc-200 dark:border-zinc-800 cursor-not-allowed opacity-50'
+                      : isOnBreak
+                      ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 animate-pulse cursor-pointer shadow-md shadow-amber-500/20'
+                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700 cursor-pointer'
+                  } active:scale-[0.98]`}
+                >
+                  <Coffee className="w-4 h-4" />
+                  {isOnBreak ? 'Resume Work' : isCheckedOut ? `${(todayRecord?.break_minutes || 0) + sessionBreakMinutes}m Break Logged` : 'Take Break'}
+                </button>
+
+                {/* Check Out Button */}
+                {!isCheckedOut ? (
+                  <button
+                    type="button"
+                    disabled={actionLoading || !isCheckedIn}
+                    onClick={handleCheckOut}
+                    className={`py-3.5 px-4 rounded-xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-2 ${
+                      !isCheckedIn
+                        ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 border border-zinc-200 dark:border-zinc-800 cursor-not-allowed opacity-50'
+                        : 'bg-rose-600 hover:bg-rose-700 text-white cursor-pointer shadow-md shadow-rose-600/20'
+                    } active:scale-[0.98]`}
+                  >
+                    <Square className="w-4 h-4 fill-current" />
+                    Punch Out
+                  </button>
+                ) : (
+                  <div className="py-3.5 px-4 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-300 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs">
+                    <CheckCircle className="w-4 h-4 text-rose-400" />
+                    Punched Out ({format(parseISO(todayRecord.check_out_time), 'hh:mm a')})
+                  </div>
                 )}
               </div>
             </div>
+          </div>
 
-            {/* Action Buttons */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-              {/* Check In Button */}
+          {/* Quick Demo Controls & Reset Footer */}
+          <div className="mt-5 pt-3 border-t border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+            <div className="flex items-center gap-2">
+              <span className="inline-block w-2 h-2 rounded-full bg-teal-500" />
+              <span>Shift active on <strong className="text-zinc-700 dark:text-zinc-300">{WORK_MODE_LABELS[workMode] || 'Office'}</strong></span>
+            </div>
+
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                disabled={actionLoading || !!todayRecord?.check_in_time}
-                onClick={handleCheckIn}
-                className="py-3 px-4 rounded-xl bg-zinc-900 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-900 font-semibold text-xs transition disabled:opacity-40 flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                onClick={handleResetToday}
+                disabled={actionLoading}
+                className="text-[11px] font-semibold text-purple-600 dark:text-purple-400 hover:text-purple-700 hover:underline cursor-pointer flex items-center gap-1"
+                title="Reset today's punch to test cycle afresh"
               >
-                <Play className="w-4 h-4" />
-                {todayRecord?.check_in_time ? `Punched In (${format(parseISO(todayRecord.check_in_time), 'hh:mm a')})` : 'Punch In'}
-              </button>
-
-              {/* Break Button */}
-              <button
-                type="button"
-                disabled={actionLoading || !todayRecord?.check_in_time || !!todayRecord?.check_out_time}
-                onClick={handleToggleBreak}
-                className={`py-3 px-4 rounded-xl font-semibold text-xs transition border cursor-pointer flex items-center justify-center gap-2 ${
-                  isOnBreak
-                    ? 'bg-amber-500 text-white border-amber-600 animate-pulse'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                } disabled:opacity-40`}
-              >
-                <Coffee className="w-4 h-4" />
-                {isOnBreak ? 'Resume Work' : 'Take Break'}
-              </button>
-
-              {/* Check Out Button */}
-              <button
-                type="button"
-                disabled={actionLoading || !todayRecord?.check_in_time || !!todayRecord?.check_out_time}
-                onClick={handleCheckOut}
-                className="py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs transition disabled:opacity-40 flex items-center justify-center gap-2 cursor-pointer shadow-xs"
-              >
-                <Square className="w-4 h-4" />
-                {todayRecord?.check_out_time ? `Punched Out (${format(parseISO(todayRecord.check_out_time), 'hh:mm a')})` : 'Punch Out'}
+                ↻ Reset Today (Demo Mode)
               </button>
             </div>
           </div>
@@ -331,7 +453,7 @@ export const AttendancePage = () => {
                 <span className="text-zinc-500 dark:text-zinc-400">Total Shift Time:</span>
                 <span className="font-mono font-bold text-zinc-900 dark:text-zinc-100">
                   {todayRecord?.check_in_time
-                    ? calcDurationFormatted(todayRecord.check_in_time, todayRecord.check_out_time, sessionBreakMinutes)
+                    ? calcDurationFormatted(todayRecord.check_in_time, todayRecord.check_out_time, (todayRecord.break_minutes || 0) + sessionBreakMinutes)
                     : '0h 0m'}
                 </span>
               </div>

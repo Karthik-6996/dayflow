@@ -149,9 +149,26 @@ export const DashboardHome = () => {
               {checkingIn ? '...' : 'Check Out'}
             </button>
           ) : (
-            <span className="px-2.5 py-1 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 text-xs font-medium">
-              Completed
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-1 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 text-xs font-medium">
+                Shift Completed
+              </span>
+              <button
+                type="button"
+                disabled={checkingIn}
+                onClick={async () => {
+                  if (todayAttendance?.id) {
+                    await attendanceService.reopenShift(todayAttendance.id);
+                    toast.success("Shift reopened! You are now Punched In.");
+                    await loadData();
+                  }
+                }}
+                className="px-2.5 py-1 rounded-md bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-medium transition cursor-pointer"
+                title="Resume or reopen today's shift"
+              >
+                Resume
+              </button>
+            </div>
           )}
         </div>
       </div>

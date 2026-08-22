@@ -178,6 +178,92 @@ export async function recordBreak(attendanceId, addedMinutes) {
 }
 
 /**
+ * Update Work Mode for an active attendance record (Office, WFH, Client)
+ */
+export async function updateWorkMode(attendanceId, workMode) {
+  if (IS_MOCK) {
+    const record = mockAttendance.find(a => a.id === attendanceId);
+    if (record) {
+      record.work_mode = workMode;
+    }
+    return { data: record, error: null };
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('attendance')
+      .update({ work_mode: workMode })
+      .eq('id', attendanceId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { data, error: null };
+  } catch (err) {
+    console.warn("Supabase updateWorkMode failed:", err);
+    return { data: null, error: err.message };
+  }
+}
+
+/**
+ * Reopen an accidentally completed shift (Punch in again / resume)
+ */
+export async function reopenShift(attendanceId) {
+  if (IS_MOCK) {
+    const record = mockAttendance.find(a => a.id === attendanceId);
+    if (record) {
+      record.check_out_time = null;
+      record.status = 'present';
+    }
+    return { data: record, error: null };
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('attendance')
+      .update({ check_out_time: null, status: 'present' })
+      .eq('id', attendanceId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { data, error: null };
+  } catch (err) {
+    console.warn("Supabase reopenShift failed:", err);
+    return { data: null, error: err.message };
+  }
+}
+
+/**
+ * Reset today's attendance record (for demo/testing or re-punching)
+ */
+export async function resetTodayAttendance(userId) {
+  const today = new Date().toISOString().split('T')[0];
+
+  if (IS_MOCK) {
+    const idx = mockAttendance.findIndex(a => a.user_id === userId && a.date === today);
+    if (idx !== -1) {
+      mockAttendance.splice(idx, 1);
+    }
+    return { data: true, error: null };
+  }
+
+  try {
+    const { error } = await supabase
+      .from('attendance')
+      .delete()
+      .eq('user_id', userId)
+      .eq('date', today);
+
+    if (error) throw error;
+    return { data: true, error: null };
+  } catch (err) {
+    console.warn("Supabase resetTodayAttendance failed:", err);
+    return { data: true, error: null };
+  }
+}
+
+/**
  * Fetch a single employee's attendance records with graceful fallback
  */
 export async function getEmployeeAttendance(userId, { startDate, endDate } = {}) {
