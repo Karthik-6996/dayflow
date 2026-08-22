@@ -105,8 +105,8 @@ export default function App() {
             </Route>
 
             {/* Root Fallback */}
-            <Route path="/" element={<Navigate to="/dashboard/employees" replace />} />
-            <Route path="*" element={<Navigate to="/dashboard/employees" replace />} />
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </BrowserRouter>
       </AuthProvider>
