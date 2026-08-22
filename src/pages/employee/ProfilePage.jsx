@@ -239,17 +239,19 @@ export const ProfilePage = () => {
           Private Info
         </button>
 
-        <button
-          onClick={() => setActiveTab('salary')}
-          className={`px-4 py-2 text-xs font-semibold rounded-md transition cursor-pointer flex items-center gap-1.5 ${
-            activeTab === 'salary'
-              ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs'
-              : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-          }`}
-        >
-          <DollarSign className="w-3.5 h-3.5" />
-          Salary Info {isAdmin ? '' : '(Restricted)'}
-        </button>
+        {isAdmin && (
+          <button
+            onClick={() => setActiveTab('salary')}
+            className={`px-4 py-2 text-xs font-semibold rounded-md transition cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'salary'
+                ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs'
+                : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+            }`}
+          >
+            <DollarSign className="w-3.5 h-3.5" />
+            Salary Info (Admin)
+          </button>
+        )}
 
         <button
           onClick={() => setActiveTab('security')}
