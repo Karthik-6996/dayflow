@@ -42,7 +42,6 @@ export const DashboardHome = () => {
   const [todayAttendance, setTodayAttendance] = useState(null);
   const [leaves, setLeaves] = useState([]);
   const [adminPendingLeaves, setAdminPendingLeaves] = useState([]);
-  const [payroll, setPayroll] = useState(null);
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // Attendance Punch State
@@ -81,11 +80,7 @@ export const DashboardHome = () => {
       const { data: leavesData } = await leaveService.getEmployeeLeaves(currentUser.id);
       setLeaves(leavesData || []);
 
-      // 4. Fetch Payroll Summary
-      const { data: payData } = await payrollService.getEmployeePayroll(currentUser.id);
-      setPayroll(payData || null);
-
-      // 5. If Admin, fetch all pending leave requests for review
+      // 4. If Admin, fetch all pending leave requests for review
       if (isAdmin) {
         const { data: allLeaves } = await leaveService.getAllLeaves({ status: 'pending' });
         setAdminPendingLeaves(allLeaves || []);
@@ -184,7 +179,7 @@ export const DashboardHome = () => {
     setNotifications(prev => prev.filter(n => n.id !== id));
   };
 
-  const isCheckedIn = !!todayAttendance?.check_in_time;
+  const isCheckedIn = !!todayAttendance?.check_in_time && !todayAttendance?.check_out_time;
   const isCheckedOut = !!todayAttendance?.check_out_time;
 
   const calcTodayDuration = () => {
@@ -286,10 +281,10 @@ export const DashboardHome = () => {
           color="teal"
         />
         <StatCard
-          title="Monthly Net Salary"
-          value={payroll ? `₹${payroll.net_salary?.toLocaleString('en-IN')}` : '₹95,450'}
-          subtitle={`CTC Base ₹${payroll?.base_salary?.toLocaleString('en-IN') || '1,10,000'}`}
-          icon={CreditCard}
+          title="Shift Schedule"
+          value="09:30 - 18:30"
+          subtitle="General Shift (IST) • Mon-Fri"
+          icon={Clock}
           color="blue"
         />
         <StatCard
