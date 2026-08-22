@@ -5,7 +5,8 @@ export const TABLES = {
   users: {
     columns: [
       'id', 'employee_id', 'email', 'role', 'name', 'phone',
-      'address', 'job_title', 'department', 'salary', 'profile_pic'
+      'address', 'job_title', 'department', 'salary', 'profile_pic',
+      'bank_details'
     ],
     required: ['id', 'employee_id', 'email', 'role', 'name'],
     enums: {
@@ -41,7 +42,11 @@ export const TABLES = {
   },
 
   payroll: {
-    columns: ['id', 'user_id', 'base_salary', 'deductions', 'net_salary'],
+    columns: [
+      'id', 'user_id', 'base_salary', 'deductions', 'net_salary',
+      'current_status', 'current_month', 'structure', 'history',
+      'selectedMonthSlip', 'users'
+    ],
     required: ['id', 'user_id', 'base_salary'],
     enums: {}
   }

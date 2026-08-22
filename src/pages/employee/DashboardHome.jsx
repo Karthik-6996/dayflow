@@ -9,10 +9,12 @@ import { StatCard } from '../../components/ui/StatCard';
 import { attendanceService } from '../../services/attendanceService';
 import { leaveService } from '../../services/leaveService';
 import { payrollService } from '../../services/payrollService';
+import { formatINR } from '../../lib/currency';
 import {
   CalendarCheck,
   CalendarDays,
   CreditCard,
+  IndianRupee,
   User,
   Clock,
   ArrowRight,
@@ -163,9 +165,9 @@ export const DashboardHome = () => {
         />
         <StatCard
           title="Current Net Salary"
-          value={payroll ? `$${payroll.net_salary?.toLocaleString()}` : '$6,708'}
-          subtitle={`Base $${payroll?.base_salary?.toLocaleString() || '7,666'}`}
-          icon={CreditCard}
+          value={payroll ? formatINR(Math.round((Number(payroll.net_salary || 0)) / 12)) : '₹1,01,083'}
+          subtitle={`Annual CTC ${formatINR(payroll?.base_salary || 1450000, { compact: true })}`}
+          icon={IndianRupee}
           color="blue"
         />
         <StatCard

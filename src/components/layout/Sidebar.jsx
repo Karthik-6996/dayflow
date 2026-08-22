@@ -11,7 +11,7 @@ import {
   Users,
   ShieldCheck,
   ClipboardList,
-  DollarSign,
+  IndianRupee,
   LogOut,
   Sparkles,
   ChevronRight
@@ -32,7 +32,7 @@ export const Sidebar = ({ mobileOpen, setMobileOpen }) => {
     { name: 'Employee Directory', to: '/dashboard/admin/employees', icon: Users },
     { name: 'All Attendance', to: '/dashboard/admin/attendance', icon: ClipboardList },
     { name: 'Leave Approvals', to: '/dashboard/admin/leaves', icon: ShieldCheck },
-    { name: 'Payroll Operations', to: '/dashboard/admin/payroll', icon: DollarSign },
+    { name: 'Payroll Operations', to: '/dashboard/admin/payroll', icon: IndianRupee },
   ];
 
   return (

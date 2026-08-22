@@ -14,7 +14,7 @@ import {
   MapPin,
   Briefcase,
   Building,
-  DollarSign,
+  IndianRupee,
   Shield,
   Save,
   CheckCircle2,
@@ -23,6 +23,7 @@ import {
   Lock,
   Sparkles
 } from 'lucide-react';
+import { formatINR } from '../../lib/currency';
 import { toast } from 'sonner';
 
 export const ProfilePage = () => {
@@ -213,11 +214,16 @@ export const ProfilePage = () => {
 
             <div>
               <span className="text-slate-400 font-semibold uppercase tracking-wider block text-[10px]">
-                Base Annual Compensation
+                Annual Gross CTC (Cost to Company)
               </span>
-              <div className="mt-1 p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 font-medium text-slate-800 flex items-center gap-2">
-                <DollarSign className="w-4 h-4 text-slate-400" />
-                ${currentUser?.salary?.toLocaleString()} USD
+              <div className="mt-1 p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 font-medium text-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <IndianRupee className="w-4 h-4 text-teal-600" />
+                  <span className="font-bold">{formatINR(currentUser?.salary || 1450000)}</span>
+                </div>
+                <span className="text-[11px] text-slate-400 font-mono">
+                  {formatINR(Math.round((currentUser?.salary || 1450000) / 12))}/mo gross
+                </span>
               </div>
             </div>
           </div>

@@ -16,11 +16,12 @@ import {
   Phone,
   MapPin,
   Briefcase,
-  DollarSign,
+  IndianRupee,
   Eye,
   Shield,
   Filter
 } from 'lucide-react';
+import { formatINR } from '../../lib/currency';
 import { toast } from 'sonner';
 
 export const EmployeeDirectory = () => {
@@ -155,7 +156,8 @@ export const EmployeeDirectory = () => {
                 <TableHead>Department</TableHead>
                 <TableHead>Job Title</TableHead>
                 <TableHead>Role</TableHead>
-                <TableHead>Base Salary</TableHead>
+                <TableHead>Assigned Role</TableHead>
+                <TableHead>Annual CTC</TableHead>
                 <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
@@ -182,8 +184,8 @@ export const EmployeeDirectory = () => {
                   <TableCell>
                     <Badge variant={emp.role}>{emp.role}</Badge>
                   </TableCell>
-                  <TableCell className="font-mono text-xs font-semibold text-slate-900">
-                    ${emp.salary?.toLocaleString()}
+                  <TableCell className="font-mono text-xs font-bold text-slate-900">
+                    {formatINR(emp.salary || 1200000)}
                   </TableCell>
                   <TableCell className="text-right">
                     <Button
@@ -238,8 +240,8 @@ export const EmployeeDirectory = () => {
                 <span className="font-medium text-slate-800">{selectedUser.address || 'No residential address on file'}</span>
               </div>
               <div className="p-3 bg-slate-50 rounded-xl">
-                <span className="text-slate-400 uppercase text-[10px] block font-semibold">Base Compensation</span>
-                <span className="font-bold text-slate-900">${selectedUser.salary?.toLocaleString()} USD / yr</span>
+                <span className="text-slate-400 uppercase text-[10px] block font-semibold">Annual Gross CTC</span>
+                <span className="font-bold text-slate-900">{formatINR(selectedUser.salary || 1200000)} / yr</span>
               </div>
               <div className="p-3 bg-slate-50 rounded-xl">
                 <span className="text-slate-400 uppercase text-[10px] block font-semibold">DB Record UUID</span>
