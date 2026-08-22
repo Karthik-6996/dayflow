@@ -34,19 +34,21 @@ export const TABLES = {
 
   leave_requests: {
     columns: [
-      'id', 'user_id', 'type', 'start_date', 'end_date',
-      'remarks', 'status', 'comments'
+      'id', 'user_id', 'type', 'start_date', 'end_date', 'days_count',
+      'is_half_day', 'half_day_session', 'document_name', 'document_url',
+      'remarks', 'status', 'comments', 'created_at', 'users'
     ],
     required: ['id', 'user_id', 'type', 'start_date', 'end_date', 'status'],
     enums: {
       type: ['paid', 'sick', 'unpaid'],
-      status: ['pending', 'approved', 'rejected']
+      status: ['pending', 'approved', 'rejected', 'cancelled']
     },
     // Valid state transitions for leave status
     transitions: {
-      pending:  ['approved', 'rejected'],
+      pending:  ['approved', 'rejected', 'cancelled'],
       approved: [],   // terminal state
       rejected: [],   // terminal state — employee should re-apply
+      cancelled: [],  // terminal state
     }
   },
 

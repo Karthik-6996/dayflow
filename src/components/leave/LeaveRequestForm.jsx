@@ -5,26 +5,69 @@
 
 import { useState } from 'react';
 import { LEAVE_TYPE, LEAVE_TYPE_LABELS } from '../../lib/constants.js';
+import { calculateWorkingDays } from '../../lib/leaveValidation.js';
 
 export default function LeaveRequestForm({ onSubmit, onClose, isSubmitting }) {
   const [form, setForm] = useState({
     type: LEAVE_TYPE.PAID,
     startDate: '',
     endDate: '',
+    isHalfDay: false,
+    halfDaySession: 'first_half',
     remarks: '',
+    documentName: null,
+    documentUrl: null
   });
   const [errors, setErrors] = useState([]);
 
   function handleChange(e) {
-    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
-    setErrors([]); // Clear errors on change
+    const { name, value, type, checked } = e.target;
+    setErrors([]);
+
+    if (name === 'isHalfDay') {
+      setForm((prev) => ({
+        ...prev,
+        isHalfDay: checked,
+        endDate: checked && prev.startDate ? prev.startDate : prev.endDate
+      }));
+      return;
+    }
+
+    if (name === 'startDate') {
+      setForm((prev) => ({
+        ...prev,
+        startDate: value,
+        endDate: prev.isHalfDay ? value : (prev.endDate && prev.endDate < value ? value : prev.endDate)
+      }));
+      return;
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
+  }
+
+  function handleFileChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setForm(prev => ({
+        ...prev,
+        documentName: file.name,
+        documentUrl: reader.result
+      }));
+    };
+    reader.readAsDataURL(file);
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
     setErrors([]);
 
-    // Basic client-side validation before calling the service
+    // Basic client-side validation
     const clientErrors = [];
     if (!form.type) clientErrors.push('Please select a leave type.');
     if (!form.startDate) clientErrors.push('Start date is required.');
@@ -42,13 +85,21 @@ export default function LeaveRequestForm({ onSubmit, onClose, isSubmitting }) {
       type: form.type,
       startDate: form.startDate,
       endDate: form.endDate,
+      isHalfDay: form.isHalfDay,
+      halfDaySession: form.halfDaySession,
       remarks: form.remarks,
+      documentName: form.documentName,
+      documentUrl: form.documentUrl
     });
 
     if (result?.error) {
       setErrors([result.error]);
     }
   }
+
+  const daysCount = form.startDate && form.endDate
+    ? calculateWorkingDays(form.startDate, form.endDate, form.isHalfDay)
+    : 0;
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -81,6 +132,43 @@ export default function LeaveRequestForm({ onSubmit, onClose, isSubmitting }) {
             </select>
           </div>
 
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.875rem', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                name="isHalfDay"
+                checked={form.isHalfDay}
+                onChange={handleChange}
+              />
+              <span>Half-Day Leave (0.5 Day)</span>
+            </label>
+
+            {form.isHalfDay && (
+              <div style={{ display: 'flex', gap: 16, marginTop: 6, marginLeft: 24, fontSize: '0.85rem' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="halfDaySession"
+                    value="first_half"
+                    checked={form.halfDaySession === 'first_half'}
+                    onChange={handleChange}
+                  />
+                  <span>First Half</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="halfDaySession"
+                    value="second_half"
+                    checked={form.halfDaySession === 'second_half'}
+                    onChange={handleChange}
+                  />
+                  <span>Second Half</span>
+                </label>
+              </div>
+            )}
+          </div>
+
           <div className="form-row">
             <div className="form-group">
               <label className="form-label" htmlFor="start-date">Start Date</label>
@@ -102,9 +190,16 @@ export default function LeaveRequestForm({ onSubmit, onClose, isSubmitting }) {
                 className="form-input"
                 value={form.endDate}
                 onChange={handleChange}
+                disabled={form.isHalfDay}
               />
             </div>
           </div>
+
+          {form.startDate && form.endDate && (
+            <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginBottom: 12 }}>
+              Working Days: <strong>{daysCount}</strong> (Weekends & gazetted holidays excluded)
+            </div>
+          )}
 
           <div className="form-group">
             <label className="form-label" htmlFor="remarks">Remarks (optional)</label>
@@ -116,6 +211,16 @@ export default function LeaveRequestForm({ onSubmit, onClose, isSubmitting }) {
               onChange={handleChange}
               placeholder="Reason for leave..."
               rows={3}
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Supporting Document (optional)</label>
+            <input
+              type="file"
+              onChange={handleFileChange}
+              accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+              style={{ fontSize: '0.85rem' }}
             />
           </div>
 
@@ -139,3 +244,4 @@ export default function LeaveRequestForm({ onSubmit, onClose, isSubmitting }) {
     </div>
   );
 }
+

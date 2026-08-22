@@ -1,5 +1,5 @@
 // src/mocks/leaveRequests.js
-// Matches TABLES.leave_requests schema: id, user_id, type, start_date, end_date, remarks, status, comments
+// Matches TABLES.leave_requests schema: id, user_id, type, start_date, end_date, days_count, is_half_day, half_day_session, document_name, document_url, remarks, status, comments, created_at
 
 export const mockLeaveRequests = [
   {
@@ -7,10 +7,16 @@ export const mockLeaveRequests = [
     user_id: "usr-001-emp",
     type: "paid",
     start_date: "2026-08-28",
-    end_date: "2026-08-29",
-    remarks: "Annual family getaway trip",
+    end_date: "2026-08-28",
+    days_count: 0.5,
+    is_half_day: true,
+    half_day_session: "second_half",
+    document_name: "Flight_Ticket_Booking.pdf",
+    document_url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+    remarks: "Early departure for Raksha Bandhan family gathering",
     status: "pending",
-    comments: null
+    comments: null,
+    created_at: "2026-08-22T08:30:00.000Z"
   },
   {
     id: "leave-req-002",
@@ -18,19 +24,31 @@ export const mockLeaveRequests = [
     type: "sick",
     start_date: "2026-08-14",
     end_date: "2026-08-14",
+    days_count: 1,
+    is_half_day: false,
+    half_day_session: null,
+    document_name: "Medical_Prescription.pdf",
+    document_url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
     remarks: "Severe flu and fever, medical rest prescribed",
     status: "approved",
-    comments: "Approved. Take care and get well soon!"
+    comments: "Approved. Take care and get well soon!",
+    created_at: "2026-08-13T10:15:00.000Z"
   },
   {
     id: "leave-req-003",
     user_id: "usr-001-emp",
     type: "paid",
     start_date: "2026-07-10",
-    end_date: "2026-07-12",
-    remarks: "Personal commitments and travel",
+    end_date: "2026-07-10",
+    days_count: 1,
+    is_half_day: false,
+    half_day_session: null,
+    document_name: null,
+    document_url: null,
+    remarks: "Personal commitments and bank work",
     status: "approved",
-    comments: "Approved by HR operations."
+    comments: "Approved by HR operations.",
+    created_at: "2026-07-08T09:00:00.000Z"
   },
   {
     id: "leave-req-004",
@@ -38,9 +56,31 @@ export const mockLeaveRequests = [
     type: "unpaid",
     start_date: "2026-06-01",
     end_date: "2026-06-05",
+    days_count: 5,
+    is_half_day: false,
+    half_day_session: null,
+    document_name: "Course_Enrollment.pdf",
+    document_url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
     remarks: "Extended sabbatical for personal certification course",
     status: "rejected",
-    comments: "Overlaps with Q2 design sprint delivery deadlines. Please reschedule."
+    comments: "Overlaps with Q2 design sprint delivery deadlines. Please reschedule.",
+    created_at: "2026-05-25T11:00:00.000Z"
+  },
+  {
+    id: "leave-req-008",
+    user_id: "usr-001-emp",
+    type: "paid",
+    start_date: "2026-05-18",
+    end_date: "2026-05-19",
+    days_count: 2,
+    is_half_day: false,
+    half_day_session: null,
+    document_name: null,
+    document_url: null,
+    remarks: "Weekend extension for short trip",
+    status: "cancelled",
+    comments: "Cancelled by employee",
+    created_at: "2026-05-10T14:20:00.000Z"
   },
   {
     id: "leave-req-005",
@@ -48,28 +88,47 @@ export const mockLeaveRequests = [
     type: "paid",
     start_date: "2026-09-02",
     end_date: "2026-09-04",
+    days_count: 3,
+    is_half_day: false,
+    half_day_session: null,
+    document_name: "Conference_Pass.pdf",
+    document_url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
     remarks: "Attending JSConf Global conference",
     status: "pending",
-    comments: null
+    comments: null,
+    created_at: "2026-08-20T16:45:00.000Z"
   },
   {
     id: "leave-req-006",
     user_id: "usr-004-emp",
     type: "sick",
-    start_date: "2026-08-22",
-    end_date: "2026-08-22",
-    remarks: "Migraine recovery",
+    start_date: "2026-08-21",
+    end_date: "2026-08-21",
+    days_count: 1,
+    is_half_day: false,
+    half_day_session: null,
+    document_name: null,
+    document_url: null,
+    remarks: "Migraine recovery and doctor consultation",
     status: "approved",
-    comments: "Approved. Rest up."
+    comments: "Approved. Rest up.",
+    created_at: "2026-08-20T18:00:00.000Z"
   },
   {
     id: "leave-req-007",
     user_id: "usr-005-emp",
     type: "paid",
-    start_date: "2026-08-30",
+    start_date: "2026-08-31",
     end_date: "2026-09-01",
-    remarks: "Moving to a new apartment",
+    days_count: 2,
+    is_half_day: false,
+    half_day_session: null,
+    document_name: "Lease_Agreement.pdf",
+    document_url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+    remarks: "Moving to a new apartment in Indiranagar",
     status: "pending",
-    comments: null
+    comments: null,
+    created_at: "2026-08-21T12:10:00.000Z"
   }
 ];
+

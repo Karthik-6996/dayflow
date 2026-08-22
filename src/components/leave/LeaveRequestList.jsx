@@ -6,7 +6,7 @@
 import { useState } from 'react';
 import StatusBadge from './LeaveStatusBadge.jsx';
 import { LEAVE_TYPE_LABELS, LEAVE_STATUS } from '../../lib/constants.js';
-import { calculateDays } from '../../lib/leaveValidation.js';
+import { calculateWorkingDays } from '../../lib/leaveValidation.js';
 import { getAvailableActions } from '../../lib/leaveStateMachine.js';
 
 export default function LeaveRequestList({ leaves, onCancel, userRole }) {
@@ -36,7 +36,8 @@ export default function LeaveRequestList({ leaves, onCancel, userRole }) {
             <th>Type</th>
             <th>From</th>
             <th>To</th>
-            <th>Days</th>
+            <th>Working Days</th>
+            <th>Document</th>
             <th>Status</th>
             <th>Remarks</th>
             <th>Comments</th>
@@ -45,7 +46,9 @@ export default function LeaveRequestList({ leaves, onCancel, userRole }) {
         </thead>
         <tbody>
           {leaves.map((leave) => {
-            const days = calculateDays(leave.start_date, leave.end_date);
+            const days = leave.days_count !== undefined
+              ? leave.days_count
+              : calculateWorkingDays(leave.start_date, leave.end_date, leave.is_half_day);
             const actions = getAvailableActions(leave.status, userRole, true);
 
             return (
@@ -54,13 +57,27 @@ export default function LeaveRequestList({ leaves, onCancel, userRole }) {
                   <span style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>
                     {LEAVE_TYPE_LABELS[leave.type] || leave.type}
                   </span>
+                  {leave.is_half_day && (
+                    <span style={{ display: 'block', fontSize: '0.75rem', color: '#b45309' }}>
+                      (Half Day)
+                    </span>
+                  )}
                 </td>
                 <td>{formatDate(leave.start_date)}</td>
                 <td>{formatDate(leave.end_date)}</td>
                 <td>
                   <span style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>
-                    {days}
+                    {days} {days === 1 ? 'day' : 'days'}
                   </span>
+                </td>
+                <td>
+                  {leave.document_name ? (
+                    <span style={{ fontSize: '0.8rem', color: '#0d9488' }}>
+                      📎 {leave.document_name}
+                    </span>
+                  ) : (
+                    '—'
+                  )}
                 </td>
                 <td><StatusBadge status={leave.status} /></td>
                 <td>
@@ -79,6 +96,7 @@ export default function LeaveRequestList({ leaves, onCancel, userRole }) {
                       className="btn btn-ghost btn-sm"
                       onClick={() => handleCancel(leave.id)}
                       disabled={cancellingId === leave.id}
+                      style={{ color: '#e11d48' }}
                     >
                       {cancellingId === leave.id ? '...' : '✕ Cancel'}
                     </button>
@@ -98,3 +116,4 @@ function formatDate(dateStr) {
   const d = new Date(dateStr);
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
+
