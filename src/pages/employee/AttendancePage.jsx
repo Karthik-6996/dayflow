@@ -120,10 +120,13 @@ export const AttendancePage = () => {
       if (error) {
         toast.error(error);
       } else {
-        toast.success(`Punched In successfully (${WORK_MODE_LABELS[workMode]})!`);
+        const nextSessionNum = (todayRecord?.punches?.length || 0) + 1;
+        toast.success(`Punched In for Session #${nextSessionNum} (${WORK_MODE_LABELS[workMode] || workMode})!`);
         setIsOnBreak(false);
         await loadData();
       }
+    } catch (e) {
+      toast.error(e?.message || "Failed to punch in");
     } finally {
       setActionLoading(false);
     }
@@ -163,19 +166,21 @@ export const AttendancePage = () => {
   };
 
   const handleCheckOut = async () => {
-    if (!todayRecord) return;
     setActionLoading(true);
     try {
-      const { error } = await attendanceService.checkOut(todayRecord.id, {
-        breakMinutes: sessionBreakMinutes
+      const { error } = await attendanceService.checkOut(todayRecord?.id, {
+        breakMinutes: sessionBreakMinutes,
+        userId: currentUser?.id
       });
       if (error) {
         toast.error(error);
       } else {
-        toast.success("Punched Out successfully! Shift marked as completed.");
+        toast.success("Punched Out successfully! Session logged.");
         setIsOnBreak(false);
         await loadData();
       }
+    } catch (e) {
+      toast.error(e?.message || "Failed to punch out");
     } finally {
       setActionLoading(false);
     }
@@ -187,7 +192,7 @@ export const AttendancePage = () => {
       return;
     }
     if (todayRecord.check_out_time) {
-      toast.info("Shift is already completed. Resume shift to log breaks.");
+      toast.info("Shift session is paused/completed. Punch in to log work and breaks.");
       return;
     }
 
@@ -198,7 +203,7 @@ export const AttendancePage = () => {
       setIsOnBreak(false);
       const addedBreak = 15;
       setSessionBreakMinutes(prev => prev + addedBreak);
-      await attendanceService.recordBreak(todayRecord.id, addedBreak);
+      await attendanceService.recordBreak(todayRecord.id, addedBreak, currentUser?.id);
       toast.success("Resumed work! 15m break logged.");
       await loadData();
     }
@@ -236,15 +241,36 @@ export const AttendancePage = () => {
     }
   };
 
-  // Helper calculation for duration
-  const calcDurationFormatted = (inTime, outTime, breaks = 0) => {
-    if (!inTime) return '—';
-    const end = outTime ? parseISO(outTime) : currentTime;
-    const grossMinutes = differenceInMinutes(end, parseISO(inTime));
-    const netMinutes = Math.max(0, grossMinutes - (breaks || 0));
+  // Helper calculation for duration across multiple sessions today
+  const calcTotalDayDuration = (record, now, additionalBreaks = 0) => {
+    if (!record || (!record.check_in_time && (!record.punches || record.punches.length === 0))) {
+      return { formatted: '0h 0m', totalMinutes: 0, sessionCount: 0, punches: [] };
+    }
+
+    const punches = record.punches && record.punches.length > 0
+      ? record.punches
+      : [{ in: record.check_in_time, out: record.check_out_time, work_mode: record.work_mode || 'office' }];
+
+    let grossMinutes = 0;
+    punches.forEach(p => {
+      if (p.in && p.out) {
+        grossMinutes += Math.max(0, differenceInMinutes(parseISO(p.out), parseISO(p.in)));
+      } else if (p.in && !p.out) {
+        grossMinutes += Math.max(0, differenceInMinutes(now, parseISO(p.in)));
+      }
+    });
+
+    const totalBreaks = (record.break_minutes || 0) + (additionalBreaks || 0);
+    const netMinutes = Math.max(0, grossMinutes - totalBreaks);
     const h = Math.floor(netMinutes / 60);
     const m = netMinutes % 60;
-    return `${h}h ${m}m`;
+
+    return {
+      formatted: `${h}h ${m}m`,
+      totalMinutes: netMinutes,
+      sessionCount: punches.length,
+      punches
+    };
   };
 
   // Calendar calculations for August 2026
@@ -257,8 +283,10 @@ export const AttendancePage = () => {
   const lateDays = attendanceRecords.filter(r => r.is_late).length;
   const wfhDays = attendanceRecords.filter(r => r.work_mode === WORK_MODES.WFH).length;
 
-  const isCheckedIn = !!todayRecord?.check_in_time;
-  const isCheckedOut = !!todayRecord?.check_out_time;
+  const isCheckedIn = !!todayRecord?.check_in_time && !todayRecord?.check_out_time;
+  const hasPunchedToday = !!todayRecord?.check_in_time || (todayRecord?.punches && todayRecord.punches.length > 0);
+  const dayDuration = calcTotalDayDuration(todayRecord, currentTime, sessionBreakMinutes);
+  const currentSessionNumber = isCheckedIn ? (todayRecord?.punches?.length || 1) : ((todayRecord?.punches?.length || 0) + 1);
 
   return (
     <div className="space-y-6 animate-fade-in text-zinc-900 dark:text-zinc-100">
@@ -270,14 +298,14 @@ export const AttendancePage = () => {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-zinc-100 dark:border-zinc-800">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className={`w-2.5 h-2.5 rounded-full ${isCheckedIn && !isCheckedOut ? 'bg-emerald-500 animate-pulse' : isCheckedOut ? 'bg-blue-500' : 'bg-amber-500'}`} />
+                  <span className={`w-2.5 h-2.5 rounded-full ${isCheckedIn ? 'bg-emerald-500 animate-pulse' : hasPunchedToday ? 'bg-blue-500' : 'bg-amber-500'}`} />
                   <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">Daily Punch Console</h2>
-                  <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
-                    Live Shift
+                  <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${isCheckedIn ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700'}`}>
+                    {isCheckedIn ? `Session #${currentSessionNumber} Active` : hasPunchedToday ? 'Shift Logged' : 'Ready'}
                   </span>
                 </div>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                  Standard General Shift (09:30 – 18:30 IST) • 15m Grace Time
+                  Standard General Shift (09:30 – 18:30 IST) • Multi-Punch Enabled
                 </p>
               </div>
 
@@ -342,8 +370,14 @@ export const AttendancePage = () => {
                     <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 animate-pulse flex items-center gap-1">
                       <Coffee className="w-3 h-3" /> On Break
                     </span>
-                  ) : todayRecord ? (
-                    <Badge variant={todayRecord.status}>{todayRecord.status}</Badge>
+                  ) : isCheckedIn ? (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Present (Session #{currentSessionNumber})
+                    </span>
+                  ) : hasPunchedToday ? (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-700">
+                      Punched Out ({dayDuration.sessionCount} Sessions)
+                    </span>
                   ) : (
                     <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
                       Not Punched In
@@ -352,9 +386,9 @@ export const AttendancePage = () => {
                 </div>
               </div>
 
-              {/* Action Buttons with Full Interactive Workflow */}
+              {/* Action Buttons: Punch In / Break / Punch Out */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-                {/* Check In / In Progress / Resume Button */}
+                {/* Check In Button: Active whenever user is not currently checked in */}
                 {!isCheckedIn ? (
                   <button
                     type="button"
@@ -363,33 +397,22 @@ export const AttendancePage = () => {
                     className="py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm transition flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-emerald-600/20 active:scale-[0.98]"
                   >
                     <Play className="w-4 h-4 fill-current" />
-                    Punch In
+                    {hasPunchedToday ? `Punch In (Session #${currentSessionNumber})` : 'Punch In'}
                   </button>
-                ) : !isCheckedOut ? (
+                ) : (
                   <div className="py-3.5 px-4 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    Punched In ({format(parseISO(todayRecord.check_in_time), 'hh:mm a')})
+                    In: {format(parseISO(todayRecord.check_in_time), 'hh:mm a')}
                   </div>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={actionLoading}
-                    onClick={handleReopenShift}
-                    className="py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm transition flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-emerald-600/20 active:scale-[0.98]"
-                    title="Resume or reopen shift session"
-                  >
-                    <Play className="w-4 h-4 fill-current" />
-                    Punch In (Resume)
-                  </button>
                 )}
 
                 {/* Break Button */}
                 <button
                   type="button"
-                  disabled={actionLoading || !isCheckedIn || isCheckedOut}
+                  disabled={actionLoading || !isCheckedIn}
                   onClick={handleToggleBreak}
                   className={`py-3.5 px-4 rounded-xl font-bold text-xs sm:text-sm transition border flex items-center justify-center gap-2 ${
-                    !isCheckedIn || isCheckedOut
+                    !isCheckedIn
                       ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 border-zinc-200 dark:border-zinc-800 cursor-not-allowed opacity-50'
                       : isOnBreak
                       ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 animate-pulse cursor-pointer shadow-md shadow-amber-500/20'
@@ -397,39 +420,71 @@ export const AttendancePage = () => {
                   } active:scale-[0.98]`}
                 >
                   <Coffee className="w-4 h-4" />
-                  {isOnBreak ? 'Resume Work' : isCheckedOut ? `${(todayRecord?.break_minutes || 0) + sessionBreakMinutes}m Break Logged` : 'Take Break'}
+                  {isOnBreak ? 'Resume Work' : !isCheckedIn && hasPunchedToday ? `${(todayRecord?.break_minutes || 0) + sessionBreakMinutes}m Break Logged` : 'Take Break'}
                 </button>
 
-                {/* Check Out Button */}
-                {!isCheckedOut ? (
+                {/* Check Out Button: Active whenever employee is currently checked in */}
+                {isCheckedIn ? (
                   <button
                     type="button"
-                    disabled={actionLoading || !isCheckedIn}
+                    disabled={actionLoading}
                     onClick={handleCheckOut}
-                    className={`py-3.5 px-4 rounded-xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-2 ${
-                      !isCheckedIn
-                        ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 border border-zinc-200 dark:border-zinc-800 cursor-not-allowed opacity-50'
-                        : 'bg-rose-600 hover:bg-rose-700 text-white cursor-pointer shadow-md shadow-rose-600/20'
-                    } active:scale-[0.98]`}
+                    className="py-3.5 px-4 rounded-xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-2 bg-rose-600 hover:bg-rose-700 text-white cursor-pointer shadow-md shadow-rose-600/20 active:scale-[0.98]"
                   >
                     <Square className="w-4 h-4 fill-current" />
-                    Punch Out
+                    Punch Out (Session #{currentSessionNumber})
                   </button>
                 ) : (
-                  <div className="py-3.5 px-4 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-300 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs">
-                    <CheckCircle className="w-4 h-4 text-rose-400" />
-                    Punched Out ({format(parseISO(todayRecord.check_out_time), 'hh:mm a')})
+                  <div className="py-3.5 px-4 rounded-xl bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60 text-zinc-500 dark:text-zinc-400 font-medium text-xs sm:text-sm flex items-center justify-center gap-2">
+                    <Square className="w-4 h-4" />
+                    {hasPunchedToday ? `Out (${format(parseISO(todayRecord.check_out_time || new Date().toISOString()), 'hh:mm a')})` : 'Punch Out'}
                   </div>
                 )}
               </div>
             </div>
+
+            {/* Today's Multi-Punch History Log (if punches exist) */}
+            {dayDuration.punches.length > 0 && (
+              <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+                <div className="flex items-center justify-between text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 mb-2">
+                  <span>Today's Sessions ({dayDuration.punches.length})</span>
+                  <span>Accumulated: <strong className="text-zinc-900 dark:text-zinc-100 font-mono">{dayDuration.formatted}</strong></span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {dayDuration.punches.map((p, idx) => {
+                    const inStr = p.in ? format(parseISO(p.in), 'hh:mm a') : '—';
+                    const outStr = p.out ? format(parseISO(p.out), 'hh:mm a') : 'Active';
+                    const durationMins = p.out
+                      ? differenceInMinutes(parseISO(p.out), parseISO(p.in))
+                      : differenceInMinutes(currentTime, parseISO(p.in));
+                    const durH = Math.floor(Math.max(0, durationMins) / 60);
+                    const durM = Math.max(0, durationMins) % 60;
+
+                    return (
+                      <div
+                        key={idx}
+                        className={`text-[11px] px-2.5 py-1 rounded-lg border flex items-center gap-1.5 ${
+                          !p.out
+                            ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 font-medium'
+                            : 'bg-zinc-50 dark:bg-zinc-800/60 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400'
+                        }`}
+                      >
+                        <span className="font-semibold">#{idx + 1}:</span>
+                        <span>{inStr} – {outStr}</span>
+                        <span className="text-[10px] opacity-75">({durH}h {durM}m • {p.work_mode || 'office'})</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Quick Demo Controls & Reset Footer */}
           <div className="mt-5 pt-3 border-t border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500 dark:text-zinc-400">
             <div className="flex items-center gap-2">
               <span className="inline-block w-2 h-2 rounded-full bg-teal-500" />
-              <span>Shift active on <strong className="text-zinc-700 dark:text-zinc-300">{WORK_MODE_LABELS[workMode] || 'Office'}</strong></span>
+              <span>Mode: <strong className="text-zinc-700 dark:text-zinc-300">{WORK_MODE_LABELS[workMode] || 'Office'}</strong></span>
             </div>
 
             <div className="flex items-center gap-2">
@@ -456,9 +511,14 @@ export const AttendancePage = () => {
               <div className="flex items-center justify-between pb-2 border-b border-zinc-100 dark:border-zinc-800">
                 <span className="text-zinc-500 dark:text-zinc-400">Total Shift Time:</span>
                 <span className="font-mono font-bold text-zinc-900 dark:text-zinc-100">
-                  {todayRecord?.check_in_time
-                    ? calcDurationFormatted(todayRecord.check_in_time, todayRecord.check_out_time, (todayRecord.break_minutes || 0) + sessionBreakMinutes)
-                    : '0h 0m'}
+                  {dayDuration.formatted}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between pb-2 border-b border-zinc-100 dark:border-zinc-800">
+                <span className="text-zinc-500 dark:text-zinc-400">Sessions Completed:</span>
+                <span className="font-mono font-bold text-zinc-900 dark:text-zinc-100">
+                  {dayDuration.sessionCount} {dayDuration.sessionCount === 1 ? 'Session' : 'Sessions'}
                 </span>
               </div>
 
@@ -472,7 +532,7 @@ export const AttendancePage = () => {
               <div className="flex items-center justify-between">
                 <span className="text-zinc-500 dark:text-zinc-400">Punctuality:</span>
                 <span className={`font-semibold ${todayRecord?.is_late ? 'text-amber-600' : 'text-emerald-600'}`}>
-                  {todayRecord?.is_late ? 'Late Arrival' : todayRecord?.check_in_time ? 'On Time (09:30)' : 'Pending Punch'}
+                  {todayRecord?.is_late ? 'Late Arrival' : hasPunchedToday ? 'On Time (09:30)' : 'Pending Punch'}
                 </span>
               </div>
             </div>

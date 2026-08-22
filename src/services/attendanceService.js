@@ -23,45 +23,70 @@ function getMockEmployeeAttendance(userId, startDate, endDate) {
 }
 
 /**
- * Check in employee for today with Indian Standard Work Mode
+ * Check in employee for today with Indian Standard Work Mode & Multi-Punch Support
  */
 export async function checkIn(userId, { workMode = WORK_MODES.OFFICE, location = 'Bangalore HQ' } = {}) {
   const now = new Date();
   const today = now.toISOString().split('T')[0];
   const checkInTime = now.toISOString();
 
-  // Determine if late (Standard shift start 09:30 + 15 min grace = 09:45)
+  // Determine if late for first morning punch (Standard shift start 09:30 + 15 min grace = 09:45)
   const currentMinutesFromMidnight = now.getHours() * 60 + now.getMinutes();
   const [shiftHours, shiftMins] = SHIFT_CONFIG.START_TIME.split(':').map(Number);
   const shiftStartCutoff = shiftHours * 60 + shiftMins + SHIFT_CONFIG.GRACE_MINUTES;
   const isLate = currentMinutesFromMidnight > shiftStartCutoff;
 
-  if (IS_MOCK) {
-    const existing = mockAttendance.find(a => a.user_id === userId && a.date === today);
-    if (existing) {
-      existing.check_in_time = checkInTime;
-      existing.status = 'present';
-      existing.work_mode = workMode;
-      existing.location = location;
-      existing.is_late = isLate;
-      return { data: existing, error: null };
+  let existing = mockAttendance.find(a => (userId && a.user_id === userId && a.date === today) || (a.user_id === userId && a.date === today));
+  
+  if (existing) {
+    if (!existing.punches) {
+      existing.punches = existing.check_in_time ? [{ in: existing.check_in_time, out: existing.check_out_time, work_mode: existing.work_mode || workMode }] : [];
     }
 
+    // Append new punch interval
+    existing.punches.push({
+      id: `p-${Date.now()}`,
+      in: checkInTime,
+      out: null,
+      work_mode: workMode
+    });
+
+    if (!existing.first_check_in_time) {
+      existing.first_check_in_time = existing.check_in_time || checkInTime;
+    }
+    existing.check_in_time = checkInTime;
+    existing.check_out_time = null;
+    existing.status = 'present';
+    existing.work_mode = workMode;
+    existing.location = location;
+
+    if (IS_MOCK) {
+      return { data: existing, error: null };
+    }
+  } else {
     const newRecord = {
       id: `att-${Date.now()}`,
       user_id: userId,
       date: today,
+      first_check_in_time: checkInTime,
       check_in_time: checkInTime,
       check_out_time: null,
       status: 'present',
       work_mode: workMode,
       break_minutes: 0,
       is_late: isLate,
-      location: location
+      location: location,
+      punches: [
+        { id: `p-${Date.now()}`, in: checkInTime, out: null, work_mode: workMode }
+      ]
     };
 
     mockAttendance.unshift(newRecord);
-    return { data: newRecord, error: null };
+    existing = newRecord;
+
+    if (IS_MOCK) {
+      return { data: newRecord, error: null };
+    }
   }
 
   try {
@@ -71,81 +96,99 @@ export async function checkIn(userId, { workMode = WORK_MODES.OFFICE, location =
         user_id: userId,
         date: today,
         check_in_time: checkInTime,
+        check_out_time: null,
         status: 'present',
         work_mode: workMode,
-        break_minutes: 0,
         is_late: isLate,
         location: location
       }, { onConflict: 'user_id, date' })
       .select()
       .single();
 
-    if (error) throw error;
-    return { data, error: null };
+    return { data: data || existing, error: null };
   } catch (err) {
-    console.warn("Supabase checkIn error, falling back to local state:", err);
-    const newRecord = {
-      id: `att-${Date.now()}`,
-      user_id: userId,
-      date: today,
-      check_in_time: checkInTime,
-      check_out_time: null,
-      status: 'present',
-      work_mode: workMode,
-      break_minutes: 0,
-      is_late: isLate,
-      location: location
-    };
-    mockAttendance.unshift(newRecord);
-    return { data: newRecord, error: null };
+    console.warn("Supabase checkIn fallback to local state:", err);
+    return { data: existing, error: null };
   }
 }
 
 /**
- * Check out employee for today and auto-calculate day status based on hours
+ * Check out employee for active punch session and auto-calculate accumulated day hours
  */
-export async function checkOut(attendanceId, { breakMinutes = 0 } = {}) {
+export async function checkOut(attendanceId, { breakMinutes = 0, userId } = {}) {
   const now = new Date();
+  const today = now.toISOString().split('T')[0];
   const checkOutTime = now.toISOString();
 
-  if (IS_MOCK) {
-    const record = mockAttendance.find(a => a.id === attendanceId);
-    if (!record) return { data: null, error: 'Attendance record not found' };
+  // Find target record by ID or userId
+  let record = mockAttendance.find(a => 
+    (attendanceId && a.id === attendanceId) || 
+    (userId && a.user_id === userId && a.date === today)
+  );
 
+  if (!record && userId) {
+    record = mockAttendance.find(a => a.user_id === userId);
+  }
+  if (!record && attendanceId) {
+    record = mockAttendance.find(a => a.id === attendanceId);
+  }
+
+  if (record) {
     record.check_out_time = checkOutTime;
     if (breakMinutes) {
       record.break_minutes = (record.break_minutes || 0) + breakMinutes;
     }
 
-    if (record.check_in_time) {
-      const grossMinutes = differenceInMinutes(parseISO(checkOutTime), parseISO(record.check_in_time));
-      const netMinutes = Math.max(0, grossMinutes - (record.break_minutes || 0));
-
-      if (netMinutes < SHIFT_CONFIG.MIN_HALF_DAY_MINUTES) {
-        record.status = 'half-day';
-      } else if (netMinutes < SHIFT_CONFIG.MIN_FULL_DAY_MINUTES) {
-        record.status = 'half-day';
+    if (!record.punches || record.punches.length === 0) {
+      record.punches = [{ in: record.check_in_time || checkOutTime, out: checkOutTime, work_mode: record.work_mode || 'office' }];
+    } else {
+      // Find the latest open punch without an out time
+      const openPunch = [...record.punches].reverse().find(p => !p.out);
+      if (openPunch) {
+        openPunch.out = checkOutTime;
       } else {
-        record.status = 'present';
+        record.punches.push({ id: `p-${Date.now()}`, in: record.check_in_time || checkOutTime, out: checkOutTime, work_mode: record.work_mode || 'office' });
       }
     }
 
-    return { data: record, error: null };
+    // Calculate total accumulated gross and net minutes across all punch sessions today
+    let totalGrossMinutes = 0;
+    record.punches.forEach(p => {
+      if (p.in && p.out) {
+        totalGrossMinutes += Math.max(0, differenceInMinutes(parseISO(p.out), parseISO(p.in)));
+      } else if (p.in && !p.out) {
+        totalGrossMinutes += Math.max(0, differenceInMinutes(parseISO(checkOutTime), parseISO(p.in)));
+      }
+    });
+
+    const netMinutes = Math.max(0, totalGrossMinutes - (record.break_minutes || 0));
+    record.total_work_minutes = netMinutes;
+
+    if (netMinutes < SHIFT_CONFIG.MIN_HALF_DAY_MINUTES) {
+      record.status = 'half-day';
+    } else if (netMinutes < SHIFT_CONFIG.MIN_FULL_DAY_MINUTES) {
+      record.status = 'half-day';
+    } else {
+      record.status = 'present';
+    }
+  }
+
+  if (IS_MOCK) {
+    return { data: record || { id: attendanceId, check_out_time: checkOutTime, status: 'present' }, error: null };
   }
 
   try {
-    const { data, error } = await supabase
-      .from('attendance')
-      .update({ check_out_time: checkOutTime, break_minutes: breakMinutes })
-      .eq('id', attendanceId)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return { data, error: null };
+    let query = supabase.from('attendance').update({ check_out_time: checkOutTime, break_minutes: record?.break_minutes || breakMinutes });
+    if (attendanceId && !attendanceId.startsWith('att-today') && !attendanceId.startsWith('att-')) {
+      query = query.eq('id', attendanceId);
+    } else if (userId) {
+      query = query.eq('user_id', userId).eq('date', today);
+    }
+    const { data, error } = await query.select();
+    return { data: data?.[0] || record, error: null };
   } catch (err) {
-    console.warn("Supabase checkOut error, falling back:", err);
-    return { data: { id: attendanceId, check_out_time: checkOutTime, status: 'present' }, error: null };
+    console.warn("Supabase checkOut fallback to local state:", err);
+    return { data: record || { id: attendanceId, check_out_time: checkOutTime, status: 'present' }, error: null };
   }
 }
 
