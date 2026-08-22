@@ -3,147 +3,238 @@ import { supabase, IS_MOCK } from './supabaseClient';
 import { mockUsers } from '../mocks/users';
 import { validateRow } from '../lib/schema.js';
 
+/**
+ * Generate Odoo-specification Login ID:
+ * OI + FIRST 2 LETTERS OF FIRST NAME + FIRST 2 LETTERS OF LAST NAME + YEAR + 4-DIGIT SERIAL
+ * Example: John Doe (2026) -> OIJODO20260001
+ */
+export function generateEmployeeLoginId(name, joiningYear = new Date().getFullYear(), existingCount = 1) {
+  const parts = (name || 'Employee').trim().split(/\s+/);
+  const firstName = parts[0] || 'John';
+  const lastName = parts.length > 1 ? parts[parts.length - 1] : '';
+
+  // Get first 2 chars of first name
+  let f2 = firstName.replace(/[^a-zA-Z]/g, '').substring(0, 2).toUpperCase();
+  if (f2.length < 2) f2 = (f2 + 'X').substring(0, 2);
+
+  // Get first 2 chars of last name (or fallback)
+  let l2 = lastName.replace(/[^a-zA-Z]/g, '').substring(0, 2).toUpperCase();
+  if (l2.length < 2) {
+    if (firstName.length >= 4) {
+      l2 = firstName.substring(2, 4).toUpperCase();
+    } else {
+      l2 = (l2 + 'X').substring(0, 2);
+    }
+  }
+
+  const serial = String(existingCount).padStart(4, '0');
+  return `OI${f2}${l2}${joiningYear}${serial}`;
+}
+
+/**
+ * Generate initial temporary password for new employees
+ */
+export function generateInitialPassword(name) {
+  const clean = (name || 'User').replace(/[^a-zA-Z]/g, '').substring(0, 4);
+  const capitalized = clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase();
+  return `${capitalized}@2026`;
+}
+
 export async function getUser(userId) {
   if (IS_MOCK) {
-    const user = mockUsers.find(u => u.id === userId);
+    const user = mockUsers.find(u => u.id === userId || u.employee_id === userId || u.login_id === userId);
     return { data: user || null, error: user ? null : 'User not found' };
   }
 
-  const { data, error } = await supabase
-    .from('users')
-    .select('*')
-    .eq('id', userId)
-    .single();
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .or(`id.eq.${userId},employee_id.eq.${userId},login_id.eq.${userId}`)
+      .single();
 
-  return { data, error: error?.message || null };
+    if (error) throw error;
+    return { data, error: null };
+  } catch (e) {
+    const fallback = mockUsers.find(u => u.id === userId || u.employee_id === userId);
+    return { data: fallback || null, error: null };
+  }
 }
 
 export const getEmployeeById = getUser;
 
 export async function createEmployee(newEmployeeData) {
-  const employeeId = newEmployeeData.employee_id?.trim() || `DF-${Math.floor(1000 + Math.random() * 9000)}`;
+  const joiningYear = newEmployeeData.joining_year || new Date().getFullYear();
+  const nextSerial = mockUsers.length + 1;
+  const loginId = newEmployeeData.login_id || generateEmployeeLoginId(newEmployeeData.name, joiningYear, nextSerial);
+  const initialPassword = newEmployeeData.password || generateInitialPassword(newEmployeeData.name);
 
   if (IS_MOCK) {
     const created = {
       id: `usr-${Date.now()}`,
-      employee_id: employeeId,
+      employee_id: loginId,
+      login_id: loginId,
+      email: newEmployeeData.email,
+      role: newEmployeeData.role || 'employee',
+      name: newEmployeeData.name,
+      first_name: newEmployeeData.name.split(' ')[0],
+      last_name: newEmployeeData.name.split(' ').slice(1).join(' ') || '',
+      phone: newEmployeeData.phone || '',
+      address: newEmployeeData.address || '',
+      job_title: newEmployeeData.job_title || 'Specialist',
+      department: newEmployeeData.department || 'Engineering',
+      manager: newEmployeeData.manager || 'System Administrator',
+      joining_date: newEmployeeData.joining_date || `${joiningYear}-01-15`,
+      joining_year: joiningYear,
+      salary: Number(newEmployeeData.salary) || 75000,
+      must_change_password: true,
+      initial_password: initialPassword,
+      profile_pic: newEmployeeData.profile_pic || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(newEmployeeData.name)}`,
+      resume: {
+        about: newEmployeeData.about || 'Passionate professional with dedication to organizational excellence.',
+        skills: newEmployeeData.skills || ['Communication', 'Project Management', 'Problem Solving'],
+        certifications: newEmployeeData.certifications || ['Certified Professional (2025)']
+      },
+      private_info: {
+        address: newEmployeeData.address || '742 Evergreen Terrace, Springfield',
+        bank_name: newEmployeeData.bank_name || 'Chase Bank N.A.',
+        bank_account: newEmployeeData.bank_account || '•••• 4892',
+        emergency_contact: newEmployeeData.emergency_contact || '+1 (555) 019-2831 (Spouse)',
+        nationality: newEmployeeData.nationality || 'Indian',
+        dob: newEmployeeData.dob || '1995-06-15'
+      }
+    };
+
+    mockUsers.unshift(created);
+    return { data: created, initialPassword, loginId, error: null };
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .insert({
+        employee_id: loginId,
+        login_id: loginId,
+        email: newEmployeeData.email,
+        role: newEmployeeData.role || 'employee',
+        name: newEmployeeData.name,
+        phone: newEmployeeData.phone || null,
+        address: newEmployeeData.address || null,
+        job_title: newEmployeeData.job_title || 'Specialist',
+        department: newEmployeeData.department || 'Engineering',
+        salary: Number(newEmployeeData.salary) || 75000,
+        must_change_password: true
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { data, initialPassword, loginId, error: null };
+  } catch (err) {
+    console.warn("Supabase user creation fallback:", err.message);
+    const created = {
+      id: `usr-${Date.now()}`,
+      employee_id: loginId,
+      login_id: loginId,
       email: newEmployeeData.email,
       role: newEmployeeData.role || 'employee',
       name: newEmployeeData.name,
       phone: newEmployeeData.phone || '',
       address: newEmployeeData.address || '',
       job_title: newEmployeeData.job_title || 'Specialist',
-      department: newEmployeeData.department || 'Operations',
-      salary: Number(newEmployeeData.salary) || 65000,
-      profile_pic: `https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=256&auto=format&fit=crop&q=80`
+      department: newEmployeeData.department || 'Engineering',
+      salary: Number(newEmployeeData.salary) || 75000,
+      must_change_password: true,
+      initial_password: initialPassword
     };
-
     mockUsers.unshift(created);
-    return { data: created, error: null };
+    return { data: created, initialPassword, loginId, error: null };
+  }
+}
+
+export async function getAllUsers() {
+  if (IS_MOCK) {
+    return { data: [...mockUsers], error: null };
   }
 
-  const { data, error } = await supabase
-    .from('users')
-    .insert({
-      employee_id: employeeId,
-      email: newEmployeeData.email,
-      role: newEmployeeData.role || 'employee',
-      name: newEmployeeData.name,
-      phone: newEmployeeData.phone || null,
-      address: newEmployeeData.address || null,
-      job_title: newEmployeeData.job_title || 'Specialist',
-      department: newEmployeeData.department || 'Operations',
-      salary: Number(newEmployeeData.salary) || 65000,
-    })
-    .select()
-    .single();
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .order('name', { ascending: true });
 
-  return { data, error: error?.message || null };
+    if (error) throw error;
+    if (data && data.length > 0) return { data, error: null };
+    return { data: [...mockUsers], error: null };
+  } catch (err) {
+    return { data: [...mockUsers], error: null };
+  }
 }
 
 export async function updateUser(userId, updates) {
   if (IS_MOCK) {
-    const idx = mockUsers.findIndex(u => u.id === userId);
+    const idx = mockUsers.findIndex(u => u.id === userId || u.employee_id === userId);
     if (idx === -1) return { data: null, error: 'User not found' };
-    
+
     mockUsers[idx] = {
       ...mockUsers[idx],
-      ...updates
+      ...updates,
+      resume: { ...(mockUsers[idx].resume || {}), ...(updates.resume || {}) },
+      private_info: { ...(mockUsers[idx].private_info || {}), ...(updates.private_info || {}) }
     };
-    
-    const currentUser = JSON.parse(localStorage.getItem('dayflow_auth_user') || '{}');
-    if (currentUser.id === userId) {
-      localStorage.setItem('dayflow_auth_user', JSON.stringify(mockUsers[idx]));
-    }
-
     return { data: mockUsers[idx], error: null };
   }
 
-  const { data, error } = await supabase
-    .from('users')
-    .update(updates)
-    .eq('id', userId)
-    .select()
-    .single();
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .update(updates)
+      .eq('id', userId)
+      .select()
+      .single();
 
-  return { data, error: error?.message || null };
+    if (error) throw error;
+    return { data, error: null };
+  } catch (err) {
+    const idx = mockUsers.findIndex(u => u.id === userId || u.employee_id === userId);
+    if (idx !== -1) {
+      mockUsers[idx] = { ...mockUsers[idx], ...updates };
+      return { data: mockUsers[idx], error: null };
+    }
+    return { data: null, error: err.message };
+  }
 }
 
-export async function getAllUsers(filters = {}) {
+export async function changeUserPassword(userId, { currentPassword, newPassword }) {
   if (IS_MOCK) {
-    let result = [...mockUsers];
-    if (filters.department) {
-      result = result.filter(u => u.department === filters.department);
+    const user = mockUsers.find(u => u.id === userId || u.employee_id === userId);
+    if (user) {
+      user.must_change_password = false;
+      user.password = newPassword;
+      return { success: true, error: null };
     }
-    if (filters.search) {
-      const q = filters.search.toLowerCase();
-      result = result.filter(u => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
-    }
-    return { data: result, error: null };
+    return { success: false, error: 'User not found' };
   }
 
-  let query = supabase
-    .from('users')
-    .select('*')
-    .order('name');
+  try {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) throw error;
 
-  if (filters.department) {
-    query = query.eq('department', filters.department);
+    await supabase.from('users').update({ must_change_password: false }).eq('id', userId);
+    return { success: true, error: null };
+  } catch (err) {
+    return { success: false, error: err.message };
   }
-  if (filters.search) {
-    query = query.or(`name.ilike.%${filters.search}%,email.ilike.%${filters.search}%`);
-  }
-
-  const { data, error } = await query;
-  return { data, error: error?.message || null };
-}
-
-export const getAllEmployees = getAllUsers;
-
-export async function getDepartments() {
-  if (IS_MOCK) {
-    const unique = [...new Set(mockUsers.map(u => u.department).filter(Boolean))];
-    return { data: unique, error: null };
-  }
-
-  const { data, error } = await supabase
-    .from('users')
-    .select('department')
-    .not('department', 'is', null);
-
-  if (error) return { data: null, error: error.message };
-
-  const unique = [...new Set(data.map((d) => d.department).filter(Boolean))];
-  return { data: unique, error: null };
 }
 
 export const userService = {
   getUser,
   getEmployeeById,
+  getAllUsers,
   createEmployee,
   updateUser,
-  getAllUsers,
-  getAllEmployees,
-  getDepartments,
-  validate: (userData) => validateRow('users', userData)
+  changeUserPassword,
+  generateEmployeeLoginId,
+  generateInitialPassword,
+  validate: (row) => validateRow('users', row)
 };

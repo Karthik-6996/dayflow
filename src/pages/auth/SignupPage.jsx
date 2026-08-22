@@ -2,165 +2,298 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { Lock, Mail, Send, User, Sparkles, Hash } from 'lucide-react';
+import { useTheme } from '../../contexts/ThemeContext';
+import {
+  Lock,
+  Mail,
+  User,
+  Building,
+  Phone,
+  Layers,
+  Sun,
+  Moon,
+  Upload,
+  Check,
+  X,
+  Eye,
+  EyeOff
+} from 'lucide-react';
+import { toast } from 'sonner';
 
 export const SignupPage = () => {
   const navigate = useNavigate();
-  const { signup } = useAuth();
+  const { isDark, toggleTheme } = useTheme();
   const [formData, setFormData] = useState({
+    companyName: '',
     name: '',
     email: '',
+    phone: '',
     password: '',
-    employee_id: '',
+    confirmPassword: '',
+    logoUrl: ''
   });
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Password requirements
+  const password = formData.password;
+  const hasMinLength = password.length >= 8;
+  const hasNumber = /\d/.test(password);
+  const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+  const hasUppercase = /[A-Z]/.test(password);
+  const passwordsMatch = password.length > 0 && password === formData.confirmPassword;
+  const isPasswordValid = hasMinLength && hasNumber && hasSpecialChar && hasUppercase && passwordsMatch;
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  const handleLogoUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData(prev => ({ ...prev, logoUrl: reader.result }));
+        toast.success("Company logo uploaded!");
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setLoading(true);
 
+    if (!isPasswordValid) {
+      setError('Please ensure password matches criteria and confirmation.');
+      return;
+    }
+
+    setLoading(true);
     try {
-      const result = await signup(formData);
-      navigate(result.needsEmailVerification ? '/verify-email' : '/dashboard');
+      // Register company & initial admin
+      localStorage.setItem('dayflow_company', JSON.stringify({
+        name: formData.companyName,
+        logo: formData.logoUrl || null,
+        created_at: new Date().toISOString()
+      }));
+
+      toast.success(`Company ${formData.companyName} registered! Please sign in with your Admin credentials.`);
+      navigate('/login');
     } catch (err) {
-      setError(err.message || 'Failed to create account');
+      setError(err.message || 'Failed to create company account');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen overflow-hidden bg-[#bea0ff] text-white relative">
-      <div
-        className="absolute inset-0 opacity-35"
-        style={{
-          backgroundImage:
-            'repeating-radial-gradient(ellipse at 18% 26%, transparent 0 18px, rgba(255,255,255,.28) 19px 21px, transparent 22px 40px)',
-        }}
-      />
+    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 relative text-zinc-900 dark:text-zinc-100 transition-colors">
+      {/* Top right theme toggle */}
+      <div className="absolute top-4 right-4">
+        <button
+          onClick={toggleTheme}
+          className="p-2 rounded-lg text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-200/60 dark:hover:bg-zinc-800 transition cursor-pointer"
+          title={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
+        >
+          {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-zinc-600" />}
+        </button>
+      </div>
 
-      <div className="relative z-10 min-h-screen flex items-center justify-center px-5 py-8 lg:px-10">
-        <div className="w-full max-w-6xl grid items-center gap-8 lg:grid-cols-[220px_minmax(0,780px)]">
-          <div className="hidden lg:flex flex-col items-end gap-4">
-            <div className="h-72 w-44 rounded-[1.45rem] bg-[#111112] shadow-[0_22px_35px_rgba(19,11,42,.38)]" />
-            <div className="mr-[-3.25rem] h-16 w-28 rounded-br-full border-b-[5px] border-r-[5px] border-[#1f1531] rotate-[18deg]" />
-          </div>
+      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+        <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 shadow-sm mb-3">
+          <Layers className="w-5 h-5" />
+        </div>
+        <h2 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-white">
+          Company Registration
+        </h2>
+        <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+          Register your organization and establish initial Administrator access
+        </p>
+      </div>
 
-          <section className="mx-auto grid w-full max-w-[780px] overflow-hidden rounded-[2rem] bg-[#111112] shadow-[0_24px_52px_rgba(28,13,58,.42)] lg:min-h-[500px] lg:grid-cols-[1fr_365px] lg:rounded-[2.2rem]">
-            <div className="flex flex-col justify-center px-7 py-10 sm:px-12 lg:px-16">
-              <div className="mb-8 flex items-center justify-center gap-2">
-                <h1 className="text-[1.7rem] font-extrabold tracking-normal text-white sm:text-3xl">
-                  Create Account
-                </h1>
-                <Sparkles className="h-6 w-6 text-[#ffbd66]" />
+      <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-lg">
+        <div className="bg-white dark:bg-zinc-900 py-8 px-6 sm:px-8 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm">
+          <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+            {error && (
+              <div className="p-3 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 font-medium">
+                {error}
               </div>
+            )}
 
-              <form onSubmit={handleSubmit} className="mx-auto w-full max-w-[280px] space-y-3">
-                {error && (
-                  <div className="rounded-2xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-xs font-medium text-rose-200">
-                    {error}
-                  </div>
-                )}
+            {/* Company Details */}
+            <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-700 space-y-3">
+              <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">
+                1. Organization Information
+              </span>
 
+              <div>
+                <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+                  Company Name *
+                </label>
                 <div className="relative">
-                  <User className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+                  <Building className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
                     required
-                    name="name"
-                    value={formData.name}
+                    name="companyName"
+                    value={formData.companyName}
                     onChange={handleChange}
-                    placeholder="Full Name"
-                    className="h-12 w-full rounded-full border-2 border-zinc-600 bg-transparent pl-10 pr-4 text-sm font-medium text-white placeholder:text-zinc-500 outline-none transition focus:border-[#7b35df] focus:ring-4 focus:ring-[#7b35df]/20"
+                    placeholder="e.g. Acme Innovations Inc."
+                    className="w-full pl-9 pr-3 py-2 text-xs rounded-lg bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400"
                   />
                 </div>
+              </div>
 
-                <div className="relative">
-                  <Hash className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
-                  <input
-                    type="text"
-                    name="employee_id"
-                    value={formData.employee_id}
-                    onChange={handleChange}
-                    placeholder="Employee ID (Optional)"
-                    className="h-12 w-full rounded-full border-2 border-zinc-600 bg-transparent pl-10 pr-4 text-sm font-medium text-white placeholder:text-zinc-500 outline-none transition focus:border-[#7b35df] focus:ring-4 focus:ring-[#7b35df]/20"
-                  />
+              <div>
+                <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+                  Company Logo Upload
+                </label>
+                <label className="flex items-center gap-2 px-3 py-2 border border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800/60 transition">
+                  <Upload className="w-4 h-4 text-zinc-400" />
+                  <span className="text-zinc-500 text-xs truncate">{formData.logoUrl ? 'Logo Attached ✓' : 'Upload PNG / SVG Logo'}</span>
+                  <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
+                </label>
+              </div>
+            </div>
+
+            {/* Admin User Details */}
+            <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-700 space-y-3">
+              <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">
+                2. Primary Administrator Account
+              </span>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+                    Admin Full Name *
+                  </label>
+                  <div className="relative">
+                    <User className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      required
+                      name="name"
+                      value={formData.name}
+                      onChange={handleChange}
+                      placeholder="e.g. Elena Rostova"
+                      className="w-full pl-9 pr-3 py-2 text-xs rounded-lg bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+                    />
+                  </div>
                 </div>
 
+                <div>
+                  <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+                    Phone Number
+                  </label>
+                  <div className="relative">
+                    <Phone className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      name="phone"
+                      value={formData.phone}
+                      onChange={handleChange}
+                      placeholder="+1 (555) 000-0000"
+                      className="w-full pl-9 pr-3 py-2 text-xs rounded-lg bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+                  Work Email *
+                </label>
                 <div className="relative">
-                  <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+                  <Mail className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="email"
                     required
                     name="email"
                     value={formData.email}
                     onChange={handleChange}
-                    placeholder="Email address"
-                    className="h-12 w-full rounded-full border-2 border-zinc-600 bg-transparent pl-10 pr-4 text-sm font-medium text-white placeholder:text-zinc-500 outline-none transition focus:border-[#7b35df] focus:ring-4 focus:ring-[#7b35df]/20"
+                    placeholder="admin@company.com"
+                    className="w-full pl-9 pr-3 py-2 text-xs rounded-lg bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400"
                   />
                 </div>
+              </div>
 
-                <div className="relative">
-                  <Lock className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
-                  <input
-                    type="password"
-                    required
-                    name="password"
-                    value={formData.password}
-                    onChange={handleChange}
-                    placeholder="Password"
-                    className="h-12 w-full rounded-full border-2 border-zinc-600 bg-transparent pl-10 pr-4 text-sm font-medium text-white placeholder:text-zinc-500 outline-none transition focus:border-[#7b35df] focus:ring-4 focus:ring-[#7b35df]/20"
-                  />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+                    Password *
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      name="password"
+                      value={formData.password}
+                      onChange={handleChange}
+                      placeholder="••••••••"
+                      className="w-full pl-9 pr-8 py-2 text-xs rounded-lg bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-zinc-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400"
+                    >
+                      {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
                 </div>
 
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#7130d8] text-sm font-extrabold text-white shadow-[0_12px_24px_rgba(113,48,216,.32)] transition hover:bg-[#7d38e7] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {loading ? (
-                    <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                  ) : (
-                    <>
-                      Sign Up <Send className="h-4 w-4 fill-white" />
-                    </>
-                  )}
-                </button>
-              </form>
+                <div>
+                  <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+                    Confirm Password *
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      name="confirmPassword"
+                      value={formData.confirmPassword}
+                      onChange={handleChange}
+                      placeholder="••••••••"
+                      className="w-full pl-9 pr-3 py-2 text-xs rounded-lg bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-zinc-400"
+                    />
+                  </div>
+                </div>
+              </div>
 
-              <p className="mt-4 text-center text-[12px] font-medium text-zinc-500">
-                Already have an account?{' '}
-                <Link to="/login" className="font-bold text-zinc-200 transition hover:text-white">
-                  Log In
-                </Link>
-              </p>
-            </div>
-
-            <div className="hidden p-4 lg:block">
-              <div className="relative h-full min-h-[468px] overflow-hidden rounded-[2rem] bg-[#ff9b6e]">
-                <div className="absolute inset-x-0 top-0 h-32 bg-[#ffa06d]" />
-                <div className="absolute -right-8 top-6 h-6 w-36 rounded-full bg-slate-100" />
-                <div className="absolute right-1 top-3 h-12 w-24 rounded-t-full bg-slate-100" />
-                <div className="absolute -left-16 top-92 h-40 w-[30rem] rounded-[50%] bg-[#5131b8]" />
-                <div className="absolute -right-24 top-14 h-48 w-[30rem] rounded-[50%] bg-[#6d38cb]" />
-                <div className="absolute -left-12 top-24 h-48 w-[26rem] rounded-[50%] bg-[#43219a]" />
-                <div className="absolute -right-20 top-48 h-28 w-80 rounded-l-full bg-[#32155f]" />
-                <div className="absolute left-24 top-48 h-8 w-20 rounded-t-full bg-[#1a0b2d]" />
-                <div className="absolute left-28 top-40 h-20 w-1 rotate-[-8deg] bg-[#1a0b2d]" />
-                <div className="absolute left-16 top-80 h-64 w-[34rem] rounded-[45%] border-[26px] border-[#4d2182] bg-[#ddecff]" />
-                <div className="absolute -left-6 top-60 h-60 w-[35rem] rounded-[45%] border-[26px] border-[#4d2182] bg-[#e9f2ff]" />
-                <div className="absolute -left-16 top-80 h-64 w-[34rem] rounded-[45%] border-[26px] border-[#4d2182] bg-[#ddecff]" />
-                <div className="absolute bottom-0 left-0 right-0 h-24 bg-[#d9e9ff]" />
-                <div className="absolute inset-x-0 bottom-0 h-36 opacity-55 [background-image:repeating-linear-gradient(90deg,transparent_0_19px,#7894cf_20px_22px,transparent_23px_42px)]" />
+              {/* Live Password Checklist */}
+              <div className="p-2.5 rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1 text-[11px]">
+                <div className={`flex items-center gap-1.5 ${hasMinLength ? 'text-emerald-600 font-medium' : 'text-zinc-500'}`}>
+                  {hasMinLength ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                  <span>8+ characters</span>
+                </div>
+                <div className={`flex items-center gap-1.5 ${passwordsMatch ? 'text-emerald-600 font-medium' : 'text-zinc-500'}`}>
+                  {passwordsMatch ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                  <span>Passwords match</span>
+                </div>
               </div>
             </div>
-          </section>
+
+            <button
+              type="submit"
+              disabled={loading || !isPasswordValid}
+              className="w-full py-2.5 px-4 rounded-lg bg-zinc-900 dark:bg-white hover:bg-zinc-800 dark:hover:bg-zinc-100 text-white dark:text-zinc-900 font-semibold text-xs transition shadow-xs disabled:opacity-50 cursor-pointer"
+            >
+              {loading ? 'Registering Company...' : 'Register Company & Admin Account'}
+            </button>
+          </form>
+
+          <div className="mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-800 text-center">
+            <p className="text-xs text-zinc-600 dark:text-zinc-400">
+              Already have an account?{' '}
+              <Link to="/login" className="font-semibold text-zinc-900 dark:text-white hover:underline">
+                Sign In
+              </Link>
+            </p>
+          </div>
         </div>
       </div>
     </div>

@@ -9,72 +9,31 @@ export const StatCard = ({
   icon: Icon,
   trend,
   trendLabel,
-  color = 'teal',
+  color = 'indigo',
   className = ''
 }) => {
-  const colorMap = {
-    teal: {
-      bg: 'bg-teal-50',
-      text: 'text-teal-700',
-      border: 'border-teal-100',
-      ring: 'ring-teal-500/20'
-    },
-    blue: {
-      bg: 'bg-blue-50',
-      text: 'text-blue-700',
-      border: 'border-blue-100',
-      ring: 'ring-blue-500/20'
-    },
-    emerald: {
-      bg: 'bg-emerald-50',
-      text: 'text-emerald-700',
-      border: 'border-emerald-100',
-      ring: 'ring-emerald-500/20'
-    },
-    purple: {
-      bg: 'bg-purple-50',
-      text: 'text-purple-700',
-      border: 'border-purple-100',
-      ring: 'ring-purple-500/20'
-    },
-    amber: {
-      bg: 'bg-amber-50',
-      text: 'text-amber-700',
-      border: 'border-amber-100',
-      ring: 'ring-amber-500/20'
-    },
-    rose: {
-      bg: 'bg-rose-50',
-      text: 'text-rose-700',
-      border: 'border-rose-100',
-      ring: 'ring-rose-500/20'
-    }
-  };
-
-  const scheme = colorMap[color] || colorMap.teal;
-
   return (
-    <Card hover className={`relative overflow-hidden ${className}`}>
+    <Card hover className={`relative ${className}`}>
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{title}</p>
-          <h4 className="text-2xl font-bold text-slate-900 mt-1.5 tracking-tight">{value}</h4>
+          <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">{title}</p>
+          <h4 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50 mt-1 tracking-tight">{value}</h4>
           {subtitle && (
-            <p className="text-xs text-slate-500 mt-1 font-medium">{subtitle}</p>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{subtitle}</p>
           )}
           {trend && (
-            <div className="flex items-center gap-1.5 mt-2">
-              <span className={`text-xs font-semibold ${trend > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+            <div className="flex items-center gap-1.5 mt-2 text-xs font-semibold">
+              <span className={trend > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
                 {trend > 0 ? `+${trend}%` : `${trend}%`}
               </span>
-              {trendLabel && <span className="text-[11px] text-slate-400">{trendLabel}</span>}
+              {trendLabel && <span className="text-[11px] font-normal text-zinc-400">{trendLabel}</span>}
             </div>
           )}
         </div>
 
         {Icon && (
-          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${scheme.bg} ${scheme.text} shadow-sm`}>
-            <Icon className="w-6 h-6" />
+          <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200/80 dark:border-zinc-700/80 shrink-0">
+            <Icon className="w-5 h-5" />
           </div>
         )}
       </div>

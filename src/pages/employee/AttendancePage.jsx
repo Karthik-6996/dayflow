@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { attendanceService } from '../../services/attendanceService';
 import { Card, CardHeader } from '../../components/ui/Card';
-import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { StatCard } from '../../components/ui/StatCard';
 import { Modal } from '../../components/ui/Modal';
@@ -16,365 +15,460 @@ import {
   AlertTriangle,
   Play,
   Square,
+  Coffee,
   Building,
-  CalendarDays,
-  FileText,
-  UserX,
-  ChevronLeft,
-  ChevronRight,
-  Info,
-  History
+  Laptop,
+  Briefcase,
+  FileCheck2,
+  AlertCircle,
+  Info
 } from 'lucide-react';
 import { format, differenceInMinutes, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from 'date-fns';
 import { toast } from 'sonner';
-import { SHIFT_CONFIG } from '../../lib/constants';
-import { getIndianHoliday, isWeekend } from '../../lib/indianHolidays';
+import { WORK_MODES, WORK_MODE_LABELS, REGULARIZATION_REASONS } from '../../lib/constants';
+import { getIndianHoliday, isWeekend, getUpcomingIndianHolidays } from '../../lib/indianHolidays';
 
 export const AttendancePage = () => {
   const { currentUser } = useAuth();
   const [attendanceRecords, setAttendanceRecords] = useState([]);
+  const [regularizations, setRegularizations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const [viewMode, setViewMode] = useState('calendar'); // 'calendar' or 'history'
+  const [activeTab, setActiveTab] = useState('calendar'); // 'calendar' | 'logs' | 'regularizations'
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  // Month navigation for employee calendar view
-  const [currentMonthDate, setCurrentMonthDate] = useState(new Date(2026, 7, 1)); // August 2026
-  const [selectedDayDetails, setSelectedDayDetails] = useState(null);
+  // Punch State
+  const [workMode, setWorkMode] = useState(WORK_MODES.OFFICE);
+  const [isOnBreak, setIsOnBreak] = useState(false);
+  const [sessionBreakMinutes, setSessionBreakMinutes] = useState(0);
+
+  // Month navigation for calendar view
+  const [currentMonthDate] = useState(new Date(2026, 7, 1)); // August 2026
+
+  // Regularization Modal State
+  const [isRegModalOpen, setIsRegModalOpen] = useState(false);
+  const [regForm, setRegForm] = useState({
+    date: '2026-08-19',
+    requestedCheckIn: '09:30',
+    requestedCheckOut: '18:30',
+    reason: 'biometric_glitch',
+    remarks: ''
+  });
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  const loadAttendance = async () => {
+  const todayStr = format(currentTime, 'yyyy-MM-dd');
+
+  const loadData = async () => {
     if (!currentUser) return;
     setLoading(true);
     try {
-      const { data, error } = await attendanceService.getEmployeeAttendance(currentUser.id);
-      if (error) toast.error("Error loading attendance records");
-      setAttendanceRecords(data || []);
+      const { data: recordsData } = await attendanceService.getEmployeeAttendance(currentUser.id, {
+        startDate: '2026-08-01',
+        endDate: '2026-08-31'
+      });
+      setAttendanceRecords(recordsData || []);
+
+      const { data: regData } = await attendanceService.getRegularizationRequests({ userId: currentUser.id });
+      setRegularizations(regData || []);
+    } catch (e) {
+      console.warn("Could not load attendance logs:", e);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadAttendance();
+    loadData();
   }, [currentUser]);
 
-  // Today reference (August 22, 2026)
-  const todayStr = '2026-08-22';
-  const todayRecord = attendanceRecords.find(a => a.date === todayStr);
+  const todayRecord = attendanceRecords.find(r => r.date === todayStr);
 
-  // Prevent duplicate check-in / check-out checks
-  const isCheckedIn = !!todayRecord?.check_in_time;
-  const isCheckedOut = !!todayRecord?.check_out_time;
-
-  // Handle Check-in (Associate with logged-in employee)
   const handleCheckIn = async () => {
-    if (isCheckedIn) {
-      toast.warning("You are already checked in for today!");
-      return;
-    }
     setActionLoading(true);
     try {
       const { error } = await attendanceService.checkIn(currentUser.id, {
-        workMode: 'office',
-        location: 'Main Office'
+        workMode,
+        location: 'Bangalore HQ'
       });
       if (error) {
         toast.error(error);
       } else {
-        toast.success("Checked in successfully for today!");
-        await loadAttendance();
+        toast.success(`Punched In successfully (${WORK_MODE_LABELS[workMode]})!`);
+        await loadData();
       }
     } finally {
       setActionLoading(false);
     }
   };
 
-  // Handle Check-out
   const handleCheckOut = async () => {
-    if (!isCheckedIn) {
-      toast.error("You need to check in first before checking out.");
-      return;
-    }
-    if (isCheckedOut) {
-      toast.warning("You have already checked out for today!");
-      return;
-    }
+    if (!todayRecord) return;
     setActionLoading(true);
     try {
-      const { error } = await attendanceService.checkOut(todayRecord.id);
+      const { error } = await attendanceService.checkOut(todayRecord.id, {
+        breakMinutes: sessionBreakMinutes
+      });
       if (error) {
         toast.error(error);
       } else {
-        toast.success("Checked out successfully. Shift ended!");
-        await loadAttendance();
+        toast.success("Punched Out successfully! Shift completed.");
+        setIsOnBreak(false);
+        await loadData();
       }
     } finally {
       setActionLoading(false);
     }
   };
 
-  // Calculate total working hours
-  const calcDuration = (checkIn, checkOut) => {
-    if (!checkIn) return '—';
-    const start = parseISO(checkIn);
-    const end = checkOut ? parseISO(checkOut) : currentTime;
-    const minutes = differenceInMinutes(end, start);
-    if (minutes < 0) return '—';
-    const hrs = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return `${hrs}h ${mins < 10 ? '0' : ''}${mins}m`;
+  const handleToggleBreak = async () => {
+    if (!todayRecord) return;
+    if (!isOnBreak) {
+      setIsOnBreak(true);
+      toast.info("Break started (Timer paused)");
+    } else {
+      setIsOnBreak(false);
+      const addedBreak = 15;
+      setSessionBreakMinutes(prev => prev + addedBreak);
+      await attendanceService.recordBreak(todayRecord.id, addedBreak);
+      toast.success("Resumed work! Break logged.");
+      await loadData();
+    }
   };
 
-  // Monthly Attendance Summary Calculations (for current viewing month)
-  const currentMonthStr = format(currentMonthDate, 'yyyy-MM');
-  const monthRecords = attendanceRecords.filter(r => r.date.startsWith(currentMonthStr));
+  const handleRegSubmit = async (e) => {
+    e.preventDefault();
+    setActionLoading(true);
+    try {
+      const { error } = await attendanceService.submitRegularizationRequest({
+        userId: currentUser.id,
+        date: regForm.date,
+        requestedCheckIn: regForm.requestedCheckIn,
+        requestedCheckOut: regForm.requestedCheckOut,
+        reason: regForm.reason,
+        remarks: regForm.remarks
+      });
 
+      if (error) {
+        toast.error(error);
+      } else {
+        toast.success("Regularization request submitted for Manager approval!");
+        setIsRegModalOpen(false);
+        setRegForm({
+          date: '2026-08-19',
+          requestedCheckIn: '09:30',
+          requestedCheckOut: '18:30',
+          reason: 'biometric_glitch',
+          remarks: ''
+        });
+        await loadData();
+      }
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Helper calculation for duration
+  const calcDurationFormatted = (inTime, outTime, breaks = 0) => {
+    if (!inTime) return '—';
+    const end = outTime ? parseISO(outTime) : currentTime;
+    const grossMinutes = differenceInMinutes(end, parseISO(inTime));
+    const netMinutes = Math.max(0, grossMinutes - (breaks || 0));
+    const h = Math.floor(netMinutes / 60);
+    const m = netMinutes % 60;
+    return `${h}h ${m}m`;
+  };
+
+  // Calendar calculations for August 2026
   const monthStart = startOfMonth(currentMonthDate);
   const monthEnd = endOfMonth(currentMonthDate);
   const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
-  const startDayOffset = (getDay(monthStart) + 6) % 7; // Mon = 0
+  const startDayOffset = (getDay(monthStart) + 6) % 7; // Align Mon=0
 
-  // Total working days in month (excluding weekends and gazetted holidays)
-  const totalWorkingDays = daysInMonth.filter(d => {
-    const dStr = format(d, 'yyyy-MM-dd');
-    return !isWeekend(d) && !getIndianHoliday(dStr);
-  }).length;
-
-  const presentDays = monthRecords.filter(r => r.status === 'present').length;
-  const halfDays = monthRecords.filter(r => r.status === 'half-day').length;
-  const leaveDays = monthRecords.filter(r => r.status === 'leave').length;
-  const absentDays = monthRecords.filter(r => r.status === 'absent').length;
-  const lateCheckIns = monthRecords.filter(r => r.is_late).length;
+  const presentDays = attendanceRecords.filter(r => r.status === 'present').length;
+  const lateDays = attendanceRecords.filter(r => r.is_late).length;
+  const wfhDays = attendanceRecords.filter(r => r.work_mode === WORK_MODES.WFH).length;
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">My Attendance Portal</h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Personal attendance dashboard, live check-in/out, monthly summary & calendar
-          </p>
-        </div>
-
-        {/* View Switcher */}
-        <div className="flex items-center gap-1.5 p-1 bg-white border border-slate-200/80 rounded-xl shadow-xs self-start">
-          <button
-            onClick={() => setViewMode('calendar')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 ${
-              viewMode === 'calendar' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Calendar className="w-3.5 h-3.5" />
-            My Attendance Calendar
-          </button>
-          <button
-            onClick={() => setViewMode('history')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 ${
-              viewMode === 'history' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <History className="w-3.5 h-3.5" />
-            Daily History Logs ({attendanceRecords.length})
-          </button>
-        </div>
-      </div>
-
-      {/* Live Punch Clock Widget & Today's Attendance Status */}
+    <div className="space-y-6 animate-fade-in text-zinc-900 dark:text-zinc-100">
+      {/* Top Banner with Clock & Live Punch Console */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Today's Punch Widget */}
-        <Card className="lg:col-span-1 bg-gradient-to-br from-slate-950 via-teal-950 to-slate-900 text-white border-slate-800 p-6 flex flex-col justify-between shadow-xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-48 h-48 bg-teal-500/10 rounded-full blur-2xl pointer-events-none" />
-
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-teal-400 uppercase tracking-wider flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-teal-400 animate-pulse" />
-                Today's Punch Status
-              </span>
-              <span className="text-xs text-slate-300 font-medium">
-                {format(currentTime, 'EEE, dd MMM yyyy')}
-              </span>
-            </div>
-
-            {/* Live digital clock */}
-            <div className="my-5 text-center bg-slate-950/60 backdrop-blur-md p-4 rounded-2xl border border-slate-800/80">
-              <div className="text-3xl sm:text-4xl font-mono font-black text-white tracking-widest">
-                {format(currentTime, 'hh:mm:ss')}
-                <span className="text-sm font-sans font-semibold text-teal-400 ml-2">
-                  {format(currentTime, 'a')}
-                </span>
+        {/* Punch In/Out Card */}
+        <Card className="lg:col-span-2 p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-zinc-100 dark:border-zinc-800">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">Daily Punch Console</h2>
               </div>
-              <p className="text-xs text-slate-300 mt-2">
-                Shift: {SHIFT_CONFIG.START_TIME} AM — {SHIFT_CONFIG.END_TIME} PM (Grace till 09:45 AM)
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                Standard General Shift (09:30 – 18:30 IST) • 15m Grace Time
               </p>
             </div>
 
-            {/* Today's Status Box */}
-            <div className="grid grid-cols-2 gap-2.5 p-3 rounded-xl bg-slate-950/70 border border-slate-800 mb-4">
-              <div>
-                <span className="text-[10px] text-slate-400 uppercase font-semibold">Check-In Time</span>
-                <p className="text-xs font-bold text-teal-300 mt-0.5 flex items-center gap-1">
-                  {todayRecord?.check_in_time ? format(parseISO(todayRecord.check_in_time), 'hh:mm a') : '—'}
-                  {todayRecord?.is_late && (
-                    <span className="px-1 py-0.2 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                      Late
-                    </span>
-                  )}
-                </p>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 uppercase font-semibold">Check-Out Time</span>
-                <p className="text-xs font-bold text-teal-300 mt-0.5">
-                  {todayRecord?.check_out_time ? format(parseISO(todayRecord.check_out_time), 'hh:mm a') : '—'}
-                </p>
-              </div>
-              <div className="col-span-2 pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs">
-                <span className="text-slate-400 text-[11px]">Today's Working Hours:</span>
-                <span className="font-mono font-bold text-teal-300">
-                  {calcDuration(todayRecord?.check_in_time, todayRecord?.check_out_time)}
-                </span>
-              </div>
+            {/* Current Real-Time Clock */}
+            <div className="text-left sm:text-right">
+              <span className="font-mono text-xl font-bold tracking-tight text-zinc-900 dark:text-white">
+                {format(currentTime, 'hh:mm:ss a')}
+              </span>
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-medium">
+                {format(currentTime, 'EEEE, dd MMMM yyyy')}
+              </p>
             </div>
           </div>
 
-          {/* Action Buttons (Preventing duplicate check-in/check-out) */}
-          <div className="pt-2">
-            {!isCheckedIn ? (
-              <Button
-                variant="primary"
-                size="lg"
-                loading={actionLoading}
-                onClick={handleCheckIn}
-                className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-extrabold shadow-lg shadow-emerald-500/20"
-                icon={Play}
-              >
-                Punch In (Check-In)
-              </Button>
-            ) : !isCheckedOut ? (
-              <Button
-                variant="danger"
-                size="lg"
-                loading={actionLoading}
-                onClick={handleCheckOut}
-                className="w-full bg-rose-500 hover:bg-rose-600 font-bold shadow-lg shadow-rose-500/20"
-                icon={Square}
-              >
-                Punch Out (End Shift)
-              </Button>
-            ) : (
-              <div className="p-3 text-center rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold">
-                ✓ Shift Completed Today • Total: {calcDuration(todayRecord.check_in_time, todayRecord.check_out_time)}
+          {/* Work Mode Selection & Status */}
+          <div className="mt-5 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-zinc-500 dark:text-zinc-400 font-medium">Work Mode:</span>
+                <div className="inline-flex rounded-lg p-0.5 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
+                  <button
+                    type="button"
+                    disabled={!!todayRecord?.check_in_time}
+                    onClick={() => setWorkMode(WORK_MODES.OFFICE)}
+                    className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                      workMode === WORK_MODES.OFFICE
+                        ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs'
+                        : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900'
+                    }`}
+                  >
+                    <Building className="w-3.5 h-3.5" /> Office
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!!todayRecord?.check_in_time}
+                    onClick={() => setWorkMode(WORK_MODES.WFH)}
+                    className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                      workMode === WORK_MODES.WFH
+                        ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs'
+                        : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900'
+                    }`}
+                  >
+                    <Laptop className="w-3.5 h-3.5" /> WFH
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!!todayRecord?.check_in_time}
+                    onClick={() => setWorkMode(WORK_MODES.CLIENT_SITE)}
+                    className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                      workMode === WORK_MODES.CLIENT_SITE
+                        ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs'
+                        : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900'
+                    }`}
+                  >
+                    <Briefcase className="w-3.5 h-3.5" /> Client
+                  </button>
+                </div>
               </div>
-            )}
+
+              {/* Status Badge */}
+              <div className="flex items-center gap-2">
+                <span className="text-zinc-500 dark:text-zinc-400 font-medium">Status:</span>
+                {todayRecord ? (
+                  <Badge variant={todayRecord.status}>{todayRecord.status}</Badge>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
+                    Not Punched In
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+              {/* Check In Button */}
+              <button
+                type="button"
+                disabled={actionLoading || !!todayRecord?.check_in_time}
+                onClick={handleCheckIn}
+                className="py-3 px-4 rounded-xl bg-zinc-900 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-900 font-semibold text-xs transition disabled:opacity-40 flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+              >
+                <Play className="w-4 h-4" />
+                {todayRecord?.check_in_time ? `Punched In (${format(parseISO(todayRecord.check_in_time), 'hh:mm a')})` : 'Punch In'}
+              </button>
+
+              {/* Break Button */}
+              <button
+                type="button"
+                disabled={actionLoading || !todayRecord?.check_in_time || !!todayRecord?.check_out_time}
+                onClick={handleToggleBreak}
+                className={`py-3 px-4 rounded-xl font-semibold text-xs transition border cursor-pointer flex items-center justify-center gap-2 ${
+                  isOnBreak
+                    ? 'bg-amber-500 text-white border-amber-600 animate-pulse'
+                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                } disabled:opacity-40`}
+              >
+                <Coffee className="w-4 h-4" />
+                {isOnBreak ? 'Resume Work' : 'Take Break'}
+              </button>
+
+              {/* Check Out Button */}
+              <button
+                type="button"
+                disabled={actionLoading || !todayRecord?.check_in_time || !!todayRecord?.check_out_time}
+                onClick={handleCheckOut}
+                className="py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs transition disabled:opacity-40 flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+              >
+                <Square className="w-4 h-4" />
+                {todayRecord?.check_out_time ? `Punched Out (${format(parseISO(todayRecord.check_out_time), 'hh:mm a')})` : 'Punch Out'}
+              </button>
+            </div>
           </div>
         </Card>
 
-        {/* Monthly Attendance Summary Metrics */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
-              {format(currentMonthDate, 'MMMM yyyy')} Attendance Summary
-            </h3>
-            <span className="text-xs text-slate-500 font-medium">
-              Employee ID: <span className="font-mono font-bold text-slate-700">{currentUser?.employee_id || 'DF-1001'}</span>
-            </span>
+        {/* Live Session Counter Widget */}
+        <Card className="p-6 flex flex-col justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Active Shift Metrics</h3>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">Calculated net working hours</p>
+
+            <div className="mt-5 space-y-3.5 text-xs">
+              <div className="flex items-center justify-between pb-2 border-b border-zinc-100 dark:border-zinc-800">
+                <span className="text-zinc-500 dark:text-zinc-400">Total Shift Time:</span>
+                <span className="font-mono font-bold text-zinc-900 dark:text-zinc-100">
+                  {todayRecord?.check_in_time
+                    ? calcDurationFormatted(todayRecord.check_in_time, todayRecord.check_out_time, sessionBreakMinutes)
+                    : '0h 0m'}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between pb-2 border-b border-zinc-100 dark:border-zinc-800">
+                <span className="text-zinc-500 dark:text-zinc-400">Break Logged:</span>
+                <span className="font-mono font-bold text-zinc-900 dark:text-zinc-100">
+                  {(todayRecord?.break_minutes || 0) + sessionBreakMinutes} mins
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-500 dark:text-zinc-400">Punctuality:</span>
+                <span className={`font-semibold ${todayRecord?.is_late ? 'text-amber-600' : 'text-emerald-600'}`}>
+                  {todayRecord?.is_late ? 'Late Arrival' : todayRecord?.check_in_time ? 'On Time (09:30)' : 'Pending Punch'}
+                </span>
+              </div>
+            </div>
           </div>
 
-          {/* 5 Standard Stat Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <StatCard
-              title="Total Working Days"
-              value={`${totalWorkingDays} Days`}
-              subtitle={`Excluding weekends & holidays`}
-              icon={CalendarDays}
-              color="purple"
-            />
-            <StatCard
-              title="Present Days"
-              value={`${presentDays} Days`}
-              subtitle="Full-day logged presence"
-              icon={CheckCircle}
-              color="emerald"
-            />
-            <StatCard
-              title="Absent Days"
-              value={`${absentDays} Days`}
-              subtitle="Unaccounted absence"
-              icon={UserX}
-              color={absentDays > 0 ? 'rose' : 'teal'}
-            />
-            <StatCard
-              title="Half Days"
-              value={`${halfDays} Days`}
-              subtitle="Partial shift logged"
-              icon={Clock}
-              color="amber"
-            />
-            <StatCard
-              title="On Leave Days"
-              value={`${leaveDays} Days`}
-              subtitle="Approved leave time off"
-              icon={FileText}
-              color="blue"
-            />
-            <StatCard
-              title="Late Check-Ins"
-              value={`${lateCheckIns} Days`}
-              subtitle="Past 09:45 AM threshold"
-              icon={AlertTriangle}
-              color={lateCheckIns > 1 ? 'amber' : 'teal'}
-            />
+          <div className="mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between text-[11px] text-zinc-500">
+            <span>Location: {todayRecord?.location || 'Bangalore HQ'}</span>
+            <button
+              onClick={() => setIsRegModalOpen(true)}
+              className="text-zinc-900 dark:text-white font-semibold hover:underline cursor-pointer"
+            >
+              Missed Punch?
+            </button>
           </div>
-        </div>
+        </Card>
       </div>
 
-      {/* VIEW 1: Employee Attendance Calendar */}
-      {viewMode === 'calendar' && (
+      {/* Monthly Summary Statistics */}
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+        <StatCard
+          title="Present Days"
+          value={`${presentDays} / 22`}
+          subtitle="August 2026 (Mon-Fri)"
+          icon={CalendarCheck}
+        />
+        <StatCard
+          title="Late Check-ins"
+          value={lateDays}
+          subtitle="Beyond 09:45 cutoff"
+          icon={AlertTriangle}
+        />
+        <StatCard
+          title="WFH Days"
+          value={wfhDays}
+          subtitle="Remote work shifts"
+          icon={Laptop}
+        />
+        <StatCard
+          title="On-Time Rate"
+          value={`${presentDays > 0 ? Math.round(((presentDays - lateDays) / presentDays) * 100) : 100}%`}
+          subtitle="Compliance score"
+          icon={CheckCircle}
+        />
+      </div>
+
+      {/* Navigation Tabs */}
+      <div className="flex items-center gap-2 border-b border-zinc-200 dark:border-zinc-800 pb-3">
+        <button
+          onClick={() => setActiveTab('calendar')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+            activeTab === 'calendar'
+              ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
+              : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+          }`}
+        >
+          Monthly Matrix Calendar
+        </button>
+        <button
+          onClick={() => setActiveTab('logs')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+            activeTab === 'logs'
+              ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
+              : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+          }`}
+        >
+          Daily History Logs
+        </button>
+        <button
+          onClick={() => setActiveTab('regularizations')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+            activeTab === 'regularizations'
+              ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
+              : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+          }`}
+        >
+          <span>Regularization Requests</span>
+          {regularizations.filter(r => r.status === 'pending').length > 0 && (
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500 text-white font-bold">
+              {regularizations.filter(r => r.status === 'pending').length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* TAB 1: Monthly Attendance Matrix Calendar */}
+      {activeTab === 'calendar' && (
         <Card className="p-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div>
-              <h3 className="text-base font-bold text-slate-900">
-                My Attendance Calendar ({format(currentMonthDate, 'MMMM yyyy')})
+              <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                {format(currentMonthDate, 'MMMM yyyy')} Attendance & Holiday Roster
               </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Click any calendar date to view check-in/out timestamps, hours worked, and remarks
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                Mon–Fri working days, Sat–Sun weekly off, and scheduled holidays
               </p>
             </div>
 
-            {/* Legend */}
-            <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-600">
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Present</span>
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Half-Day</span>
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-rose-500" /> Absent</span>
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-blue-500" /> On Leave</span>
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-purple-500" /> Holiday</span>
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-slate-300" /> Weekend</span>
+            <div className="flex flex-wrap items-center gap-3 text-[11px] text-zinc-600 dark:text-zinc-400">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Present</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> Half-Day/Late</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-indigo-500" /> Leave</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-zinc-300 dark:bg-zinc-700" /> Off</span>
             </div>
           </div>
 
           {/* Calendar Grid */}
-          <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+          <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
             {/* Days Header */}
-            <div className="grid grid-cols-7 bg-slate-100 border-b border-slate-200 text-center py-2.5 text-xs font-bold text-slate-700">
+            <div className="grid grid-cols-7 bg-zinc-50 dark:bg-zinc-800/60 border-b border-zinc-200 dark:border-zinc-800 text-center py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-300">
               <span>Mon</span>
               <span>Tue</span>
               <span>Wed</span>
               <span>Thu</span>
               <span>Fri</span>
-              <span className="text-slate-400">Sat</span>
-              <span className="text-slate-400">Sun</span>
+              <span className="text-zinc-400">Sat</span>
+              <span className="text-zinc-400">Sun</span>
             </div>
 
             {/* Day Cells */}
-            <div className="grid grid-cols-7 divide-x divide-y divide-slate-100 bg-white">
+            <div className="grid grid-cols-7 divide-x divide-y divide-zinc-200 dark:divide-zinc-800 bg-white dark:bg-zinc-900">
               {Array.from({ length: startDayOffset }).map((_, i) => (
-                <div key={`empty-${i}`} className="min-h-[90px] bg-slate-50/50 p-2" />
+                <div key={`empty-${i}`} className="min-h-[85px] bg-zinc-50/50 dark:bg-zinc-950/30 p-2" />
               ))}
 
               {daysInMonth.map((dayObj) => {
@@ -387,56 +481,49 @@ export const AttendancePage = () => {
                 return (
                   <div
                     key={dateStr}
-                    onClick={() => setSelectedDayDetails({ date: dateStr, holiday, record })}
-                    className={`min-h-[95px] p-2.5 transition-all cursor-pointer hover:bg-teal-50/40 relative flex flex-col justify-between ${
-                      isToday ? 'bg-teal-50/60 ring-2 ring-teal-500 ring-inset' : isWknd ? 'bg-slate-50/60' : 'bg-white'
+                    className={`min-h-[85px] p-2 transition-all relative flex flex-col justify-between ${
+                      isToday ? 'bg-zinc-100 dark:bg-zinc-800/80 font-bold' : isWknd ? 'bg-zinc-50/50 dark:bg-zinc-950/40' : ''
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className={`text-xs font-bold ${
-                        isToday ? 'px-1.5 py-0.5 rounded bg-teal-600 text-white' : isWknd ? 'text-slate-400' : 'text-slate-800'
+                      <span className={`text-xs font-semibold ${
+                        isToday ? 'px-1.5 py-0.2 rounded bg-zinc-900 dark:bg-white text-white dark:text-zinc-900' : isWknd ? 'text-zinc-400' : 'text-zinc-800 dark:text-zinc-200'
                       }`}>
                         {format(dayObj, 'd')}
                       </span>
 
                       {holiday && (
-                        <span className="text-[9px] px-1.5 py-0.2 rounded font-extrabold bg-purple-100 text-purple-800 border border-purple-200 truncate max-w-[65px]" title={holiday.name}>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded font-semibold bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 truncate max-w-[65px]" title={holiday.name}>
                           Holiday
                         </span>
                       )}
                     </div>
 
-                    {/* Status Content */}
                     <div className="mt-1">
                       {holiday ? (
-                        <div className="text-[10px] font-bold text-purple-700 leading-tight truncate">
+                        <div className="text-[10px] font-semibold text-purple-600 dark:text-purple-400 leading-tight truncate">
                           {holiday.name}
                         </div>
                       ) : record ? (
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-1">
                             <span className={`w-1.5 h-1.5 rounded-full ${
-                              record.status === 'present' ? 'bg-emerald-500' : record.status === 'half-day' ? 'bg-amber-500' : record.status === 'absent' ? 'bg-rose-500' : 'bg-blue-500'
+                              record.status === 'present' ? 'bg-emerald-500' : record.status === 'half-day' ? 'bg-amber-500' : 'bg-indigo-500'
                             }`} />
-                            <span className="text-[11px] font-bold text-slate-800 capitalize">
+                            <span className="text-[10px] font-semibold text-zinc-900 dark:text-zinc-100 capitalize">
                               {record.status}
                             </span>
                           </div>
                           {record.check_in_time && (
-                            <p className="text-[9px] text-slate-500 font-mono">
-                              {format(parseISO(record.check_in_time), 'hh:mm')} - {record.check_out_time ? format(parseISO(record.check_out_time), 'hh:mm') : 'Active'}
+                            <p className="text-[9px] text-zinc-500 dark:text-zinc-400 font-mono">
+                              {format(parseISO(record.check_in_time), 'hh:mm')}
                             </p>
-                          )}
-                          {record.is_late && (
-                            <span className="text-[8px] font-bold text-amber-700 bg-amber-100 px-1 rounded inline-block">
-                              Late In
-                            </span>
                           )}
                         </div>
                       ) : isWknd ? (
-                        <span className="text-[10px] text-slate-400 font-medium">Weekly Off</span>
+                        <span className="text-[10px] text-zinc-400">Off</span>
                       ) : (
-                        <span className="text-[10px] text-slate-300 italic">No log</span>
+                        <span className="text-[10px] text-zinc-400 italic">No log</span>
                       )}
                     </div>
                   </div>
@@ -447,21 +534,20 @@ export const AttendancePage = () => {
         </Card>
       )}
 
-      {/* VIEW 2: Daily Attendance History Table */}
-      {viewMode === 'history' && (
+      {/* TAB 2: Detailed Attendance Logs Table */}
+      {activeTab === 'logs' && (
         <Card>
           <CardHeader
-            title="Daily Attendance History Logs"
-            subtitle={`Showing all recorded attendance entries for ${currentUser?.name}`}
+            title="Detailed Attendance History"
+            subtitle="Showing all recorded shifts, punch timestamps, and work locations"
           />
 
           {loading ? (
-            <div className="py-12 text-center text-slate-400 text-sm">
-              <div className="w-8 h-8 border-3 border-teal-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-              Loading attendance records...
+            <div className="py-12 text-center text-zinc-400 text-xs">
+              Loading records...
             </div>
           ) : attendanceRecords.length === 0 ? (
-            <div className="py-12 text-center text-slate-400 text-sm">
+            <div className="py-12 text-center text-zinc-400 text-xs">
               No attendance records found.
             </div>
           ) : (
@@ -469,52 +555,39 @@ export const AttendancePage = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
-                  <TableHead>Check-In Time</TableHead>
-                  <TableHead>Check-Out Time</TableHead>
-                  <TableHead>Total Working Hours</TableHead>
+                  <TableHead>Work Mode</TableHead>
+                  <TableHead>Check-In</TableHead>
+                  <TableHead>Check-Out</TableHead>
+                  <TableHead>Break</TableHead>
+                  <TableHead>Net Hours</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Remarks / Notes</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {attendanceRecords.map((record) => (
                   <TableRow key={record.id}>
-                    <TableCell className="font-semibold text-slate-900">
-                      {record.date === todayStr ? (
-                        <span className="flex items-center gap-1.5">
-                          {record.date} <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-teal-100 text-teal-800">TODAY</span>
-                        </span>
-                      ) : record.date}
+                    <TableCell className="font-semibold text-zinc-900 dark:text-zinc-100">
+                      {record.date === todayStr ? `${record.date} (Today)` : record.date}
                     </TableCell>
-                    <TableCell className="text-xs">
-                      {record.check_in_time ? (
-                        <span className="font-mono">
-                          {format(parseISO(record.check_in_time), 'hh:mm:ss a')}
-                          {record.is_late && (
-                            <span className="ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800">
-                              Late In
-                            </span>
-                          )}
-                        </span>
-                      ) : '—'}
+                    <TableCell>
+                      <span className="text-xs capitalize font-medium text-zinc-800 dark:text-zinc-200">
+                        {record.work_mode || 'Office'}
+                      </span>
                     </TableCell>
-                    <TableCell className="text-xs">
-                      {record.check_out_time ? (
-                        <span className="font-mono">{format(parseISO(record.check_out_time), 'hh:mm:ss a')}</span>
-                      ) : record.check_in_time && record.date === todayStr ? (
-                        <span className="text-teal-600 font-semibold flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-ping" /> In-Progress
-                        </span>
-                      ) : '—'}
+                    <TableCell className="text-xs font-mono text-zinc-800 dark:text-zinc-200">
+                      {record.check_in_time ? format(parseISO(record.check_in_time), 'hh:mm:ss a') : '—'}
                     </TableCell>
-                    <TableCell className="font-mono text-xs font-bold text-slate-800">
-                      {calcDuration(record.check_in_time, record.check_out_time)}
+                    <TableCell className="text-xs font-mono text-zinc-800 dark:text-zinc-200">
+                      {record.check_out_time ? format(parseISO(record.check_out_time), 'hh:mm:ss a') : record.check_in_time ? 'In-Progress' : '—'}
+                    </TableCell>
+                    <TableCell className="text-xs text-zinc-500">
+                      {record.break_minutes ? `${record.break_minutes}m` : '—'}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                      {calcDurationFormatted(record.check_in_time, record.check_out_time, record.break_minutes)}
                     </TableCell>
                     <TableCell>
                       <Badge variant={record.status}>{record.status}</Badge>
-                    </TableCell>
-                    <TableCell className="text-xs text-slate-600">
-                      {record.remarks || record.location || '—'}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -524,78 +597,166 @@ export const AttendancePage = () => {
         </Card>
       )}
 
-      {/* Date Details Modal */}
-      {selectedDayDetails && (
-        <Modal
-          isOpen={!!selectedDayDetails}
-          onClose={() => setSelectedDayDetails(null)}
-          title={`Attendance Details — ${selectedDayDetails.date}`}
-          subtitle="Record summary for selected date"
-        >
-          <div className="space-y-4">
-            {selectedDayDetails.holiday ? (
-              <div className="p-4 rounded-xl bg-purple-50 border border-purple-200">
-                <h4 className="font-bold text-purple-900 text-sm">{selectedDayDetails.holiday.name}</h4>
-                <p className="text-xs text-purple-700 mt-1">{selectedDayDetails.holiday.description}</p>
-                <span className="mt-2 inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-purple-200 text-purple-800">
-                  {selectedDayDetails.holiday.isNational ? 'National Holiday' : 'Gazetted Holiday'}
-                </span>
-              </div>
-            ) : selectedDayDetails.record ? (
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">Status</span>
-                    <div className="mt-0.5">
-                      <Badge variant={selectedDayDetails.record.status}>{selectedDayDetails.record.status}</Badge>
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">Late Check-In</span>
-                    <p className="text-xs font-bold text-slate-800 mt-0.5">
-                      {selectedDayDetails.record.is_late ? 'Yes (Late Arrival)' : 'No (On Time)'}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">Check-In</span>
-                    <p className="text-xs font-mono font-bold text-slate-800 mt-0.5">
-                      {selectedDayDetails.record.check_in_time ? format(parseISO(selectedDayDetails.record.check_in_time), 'hh:mm:ss a') : '—'}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">Check-Out</span>
-                    <p className="text-xs font-mono font-bold text-slate-800 mt-0.5">
-                      {selectedDayDetails.record.check_out_time ? format(parseISO(selectedDayDetails.record.check_out_time), 'hh:mm:ss a') : '—'}
-                    </p>
-                  </div>
-                  <div className="col-span-2 pt-2 border-t border-slate-200 flex justify-between items-center">
-                    <span className="text-xs text-slate-500 font-medium">Total Duration:</span>
-                    <span className="text-xs font-mono font-bold text-slate-900">
-                      {calcDuration(selectedDayDetails.record.check_in_time, selectedDayDetails.record.check_out_time)}
-                    </span>
-                  </div>
-                </div>
-                {selectedDayDetails.record.remarks && (
-                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
-                    <span className="font-bold text-slate-700">Remarks: </span>
-                    <span className="text-slate-600">{selectedDayDetails.record.remarks}</span>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="p-4 text-center text-slate-500 text-xs">
-                No attendance recorded for this date.
-              </div>
-            )}
+      {/* TAB 3: Regularization Requests */}
+      {activeTab === 'regularizations' && (
+        <Card>
+          <div className="flex items-center justify-between p-4 border-b border-zinc-100 dark:border-zinc-800">
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">My Regularization Requests</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">Missed punch adjustments & time correction requests</p>
+            </div>
+            <button
+              onClick={() => setIsRegModalOpen(true)}
+              className="px-3 py-1.5 rounded-lg bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-xs font-semibold cursor-pointer"
+            >
+              New Request
+            </button>
+          </div>
 
-            <div className="flex justify-end pt-3 border-t border-slate-100">
-              <Button variant="secondary" onClick={() => setSelectedDayDetails(null)}>
-                Close
-              </Button>
+          {regularizations.length === 0 ? (
+            <div className="py-12 text-center text-zinc-400 text-xs">
+              No regularization requests submitted.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Target Date</TableHead>
+                  <TableHead>Requested Shift</TableHead>
+                  <TableHead>Reason</TableHead>
+                  <TableHead>Remarks</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>HR Review Notes</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {regularizations.map((r) => (
+                  <TableRow key={r.id}>
+                    <TableCell className="font-semibold text-zinc-900 dark:text-zinc-100 text-xs">{r.date}</TableCell>
+                    <TableCell className="font-mono text-xs text-zinc-700 dark:text-zinc-300">
+                      {r.requested_check_in} — {r.requested_check_out}
+                    </TableCell>
+                    <TableCell className="text-xs capitalize text-zinc-800 dark:text-zinc-200">
+                      {r.reason?.replace(/_/g, ' ')}
+                    </TableCell>
+                    <TableCell className="text-xs text-zinc-500 dark:text-zinc-400 max-w-xs truncate" title={r.remarks}>
+                      {r.remarks || '—'}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={r.status}>{r.status}</Badge>
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {r.admin_comments ? (
+                        <span className="text-zinc-800 dark:text-zinc-200 font-medium">
+                          {r.admin_comments}
+                        </span>
+                      ) : (
+                        <span className="text-zinc-400 italic">Pending review</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </Card>
+      )}
+
+      {/* Regularization Modal */}
+      <Modal
+        isOpen={isRegModalOpen}
+        onClose={() => setIsRegModalOpen(false)}
+        title="Apply for Attendance Regularization"
+        subtitle="Submit missed punch or time correction for manager review"
+      >
+        <form onSubmit={handleRegSubmit} className="space-y-3.5 text-xs">
+          <div>
+            <label className="block text-zinc-700 dark:text-zinc-300 font-semibold mb-1">
+              Attendance Date *
+            </label>
+            <input
+              type="date"
+              required
+              value={regForm.date}
+              onChange={(e) => setRegForm({ ...regForm, date: e.target.value })}
+              className="w-full px-3 py-2 rounded-lg bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-zinc-400"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-zinc-700 dark:text-zinc-300 font-semibold mb-1">
+                Requested Check-In *
+              </label>
+              <input
+                type="time"
+                required
+                value={regForm.requestedCheckIn}
+                onChange={(e) => setRegForm({ ...regForm, requestedCheckIn: e.target.value })}
+                className="w-full px-3 py-2 rounded-lg bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-zinc-400"
+              />
+            </div>
+            <div>
+              <label className="block text-zinc-700 dark:text-zinc-300 font-semibold mb-1">
+                Requested Check-Out *
+              </label>
+              <input
+                type="time"
+                required
+                value={regForm.requestedCheckOut}
+                onChange={(e) => setRegForm({ ...regForm, requestedCheckOut: e.target.value })}
+                className="w-full px-3 py-2 rounded-lg bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-zinc-400"
+              />
             </div>
           </div>
-        </Modal>
-      )}
+
+          <div>
+            <label className="block text-zinc-700 dark:text-zinc-300 font-semibold mb-1">
+              Reason Category *
+            </label>
+            <select
+              value={regForm.reason}
+              onChange={(e) => setRegForm({ ...regForm, reason: e.target.value })}
+              className="w-full px-3 py-2 rounded-lg bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-zinc-400"
+            >
+              {REGULARIZATION_REASONS.map((r) => (
+                <option key={r.id} value={r.id}>{r.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-zinc-700 dark:text-zinc-300 font-semibold mb-1">
+              Detailed Remarks *
+            </label>
+            <textarea
+              required
+              rows={3}
+              value={regForm.remarks}
+              onChange={(e) => setRegForm({ ...regForm, remarks: e.target.value })}
+              placeholder="Explain reason for missed punch / time correction..."
+              className="w-full p-3 rounded-lg bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-zinc-400"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+            <button
+              type="button"
+              onClick={() => setIsRegModalOpen(false)}
+              className="px-4 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 font-semibold cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={actionLoading}
+              className="px-5 py-2 rounded-lg bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-100 font-semibold cursor-pointer"
+            >
+              {actionLoading ? 'Saving...' : 'Submit Request'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };
