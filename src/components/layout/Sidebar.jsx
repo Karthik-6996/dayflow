@@ -14,7 +14,9 @@ import {
   IndianRupee,
   LogOut,
   Layers,
-  Sparkles
+  Sparkles,
+  FileText,
+  BarChart3
 } from 'lucide-react';
 
 export const Sidebar = ({ mobileOpen, setMobileOpen }) => {
