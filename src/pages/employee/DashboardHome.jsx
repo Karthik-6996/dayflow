@@ -27,10 +27,9 @@ import {
 import { format, parseISO } from 'date-fns';
 
 export const DashboardHome = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, isAdmin } = useAuth();
   const [todayAttendance, setTodayAttendance] = useState(null);
   const [leaves, setLeaves] = useState([]);
-  const [payroll, setPayroll] = useState(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [checkingIn, setCheckingIn] = useState(false);
   const [workMode, setWorkMode] = useState(WORK_MODES?.OFFICE || 'office');
@@ -49,9 +48,6 @@ export const DashboardHome = () => {
 
       const { data: leavesData } = await leaveService.getEmployeeLeaves(currentUser.id);
       setLeaves(leavesData || []);
-
-      const { data: payData } = await payrollService.getEmployeePayroll(currentUser.id);
-      setPayroll(payData || null);
     } catch (e) {
       console.error("Failed loading dashboard data:", e);
     }
