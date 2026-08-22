@@ -59,15 +59,19 @@ export const ATTENDANCE_STATUS_LABELS = Object.freeze({
 
 // ── Work Modes (Indian Standard Corporate Setup) ────────────────
 export const WORK_MODES = Object.freeze({
-  OFFICE:  'office',
-  WFH:     'wfh',
-  ON_DUTY: 'on_duty',
+  OFFICE:      'office',
+  WFH:         'wfh',
+  ON_DUTY:     'on_duty',
+  CLIENT:      'on_duty',
+  CLIENT_SITE: 'on_duty',
 });
 
 export const WORK_MODE_LABELS = Object.freeze({
-  [WORK_MODES.OFFICE]:  'Work from Office',
-  [WORK_MODES.WFH]:     'Work from Home',
-  [WORK_MODES.ON_DUTY]: 'Client On-Duty (OD)',
+  [WORK_MODES.OFFICE]:      'Work from Office',
+  [WORK_MODES.WFH]:         'Work from Home',
+  [WORK_MODES.ON_DUTY]:     'Client On-Duty (OD)',
+  'client':                 'Client On-Duty (OD)',
+  'client_site':            'Client On-Duty (OD)',
 });
 
 // ── Shift Configuration (Indian Standard General Shift - IST) ──

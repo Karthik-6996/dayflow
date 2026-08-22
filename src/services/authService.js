@@ -232,5 +232,22 @@ export const authService = {
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
     return user;
+  },
+
+  /**
+   * Reset Password by sending password reset link/email
+   */
+  async resetPassword(email) {
+    if (IS_MOCK) {
+      const user = mockUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
+      return { success: true, message: `Password reset instructions sent to ${email}` };
+    }
+
+    const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/login`
+    });
+
+    if (error) throw error;
+    return { success: true, data };
   }
 };

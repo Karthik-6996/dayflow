@@ -27,9 +27,16 @@ import { format, differenceInMinutes, parseISO, startOfMonth, endOfMonth, eachDa
 import { toast } from 'sonner';
 import { WORK_MODES, WORK_MODE_LABELS, REGULARIZATION_REASONS } from '../../lib/constants';
 import { getIndianHoliday, isWeekend, getUpcomingIndianHolidays } from '../../lib/indianHolidays';
+import { GoogleWorkspaceCalendar } from '../../components/calendar/GoogleWorkspaceCalendar';
 
 export const AttendancePage = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, isAdmin } = useAuth();
+<<<<<<< Updated upstream
+  const isAdminUser = Boolean(isAdmin || currentUser?.role === 'admin');
+=======
+  const isAdminUser = isAdmin || currentUser?.role === 'admin';
+>>>>>>> Stashed changes
+
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [regularizations, setRegularizations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -87,6 +94,29 @@ export const AttendancePage = () => {
 
   const todayRecord = attendanceRecords.find(r => r.date === todayStr);
 
+  // Sync workMode with today's record if present
+  useEffect(() => {
+    if (todayRecord?.work_mode) {
+      setWorkMode(todayRecord.work_mode);
+    }
+  }, [todayRecord]);
+
+  const handleWorkModeChange = async (newMode) => {
+    setWorkMode(newMode);
+    if (todayRecord?.id || currentUser?.id) {
+      setActionLoading(true);
+      try {
+        await attendanceService.updateWorkMode(todayRecord?.id, newMode, currentUser?.id);
+        toast.success(`Work Mode set to ${WORK_MODE_LABELS[newMode] || newMode}`);
+        await loadData();
+      } catch (e) {
+        toast.error("Failed to update work mode");
+      } finally {
+        setActionLoading(false);
+      }
+    }
+  };
+
   const handleCheckIn = async () => {
     setActionLoading(true);
     try {
@@ -97,44 +127,91 @@ export const AttendancePage = () => {
       if (error) {
         toast.error(error);
       } else {
-        toast.success(`Punched In successfully (${WORK_MODE_LABELS[workMode]})!`);
+        const nextSessionNum = (todayRecord?.punches?.length || 0) + 1;
+        toast.success(`Punched In for Session #${nextSessionNum} (${WORK_MODE_LABELS[workMode] || workMode})!`);
+        setIsOnBreak(false);
         await loadData();
       }
+    } catch (e) {
+      toast.error(e?.message || "Failed to punch in");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReopenShift = async () => {
+    setActionLoading(true);
+    try {
+      const { error } = await attendanceService.reopenShift(todayRecord?.id, currentUser?.id);
+      if (error) {
+        toast.error(error);
+      } else {
+        toast.success("Shift resumed! You are now Punched In.");
+        setIsOnBreak(false);
+        await loadData();
+      }
+    } catch (e) {
+      toast.error(e?.message || "Failed to reopen shift");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleResetToday = async () => {
+    setActionLoading(true);
+    try {
+      await attendanceService.resetTodayAttendance(currentUser.id);
+      setIsOnBreak(false);
+      setSessionBreakMinutes(0);
+      toast.success("Today's punch reset! You can now test punching in afresh.");
+      await loadData();
+    } catch (e) {
+      toast.error("Failed to reset attendance");
     } finally {
       setActionLoading(false);
     }
   };
 
   const handleCheckOut = async () => {
-    if (!todayRecord) return;
     setActionLoading(true);
     try {
-      const { error } = await attendanceService.checkOut(todayRecord.id, {
-        breakMinutes: sessionBreakMinutes
+      const { error } = await attendanceService.checkOut(todayRecord?.id, {
+        breakMinutes: sessionBreakMinutes,
+        userId: currentUser?.id
       });
       if (error) {
         toast.error(error);
       } else {
-        toast.success("Punched Out successfully! Shift completed.");
+        toast.success("Punched Out successfully! Session logged.");
         setIsOnBreak(false);
         await loadData();
       }
+    } catch (e) {
+      toast.error(e?.message || "Failed to punch out");
     } finally {
       setActionLoading(false);
     }
   };
 
   const handleToggleBreak = async () => {
-    if (!todayRecord) return;
+    if (!todayRecord) {
+      toast.info("Please punch in first before taking a break.");
+      return;
+    }
+    if (todayRecord.check_out_time) {
+      toast.info("Shift session is paused/completed. Punch in to log work and breaks.");
+      return;
+    }
+
     if (!isOnBreak) {
       setIsOnBreak(true);
-      toast.info("Break started (Timer paused)");
+      toast.info("Break started (Working timer paused) ☕");
     } else {
       setIsOnBreak(false);
       const addedBreak = 15;
       setSessionBreakMinutes(prev => prev + addedBreak);
-      await attendanceService.recordBreak(todayRecord.id, addedBreak);
-      toast.success("Resumed work! Break logged.");
+      await attendanceService.recordBreak(todayRecord.id, addedBreak, currentUser?.id);
+      toast.success("Resumed work! 15m break logged.");
       await loadData();
     }
   };
@@ -171,15 +248,36 @@ export const AttendancePage = () => {
     }
   };
 
-  // Helper calculation for duration
-  const calcDurationFormatted = (inTime, outTime, breaks = 0) => {
-    if (!inTime) return '—';
-    const end = outTime ? parseISO(outTime) : currentTime;
-    const grossMinutes = differenceInMinutes(end, parseISO(inTime));
-    const netMinutes = Math.max(0, grossMinutes - (breaks || 0));
+  // Helper calculation for duration across multiple sessions today
+  const calcTotalDayDuration = (record, now, additionalBreaks = 0) => {
+    if (!record || (!record.check_in_time && (!record.punches || record.punches.length === 0))) {
+      return { formatted: '0h 0m', totalMinutes: 0, sessionCount: 0, punches: [] };
+    }
+
+    const punches = record.punches && record.punches.length > 0
+      ? record.punches
+      : [{ in: record.check_in_time, out: record.check_out_time, work_mode: record.work_mode || 'office' }];
+
+    let grossMinutes = 0;
+    punches.forEach(p => {
+      if (p.in && p.out) {
+        grossMinutes += Math.max(0, differenceInMinutes(parseISO(p.out), parseISO(p.in)));
+      } else if (p.in && !p.out) {
+        grossMinutes += Math.max(0, differenceInMinutes(now, parseISO(p.in)));
+      }
+    });
+
+    const totalBreaks = (record.break_minutes || 0) + (additionalBreaks || 0);
+    const netMinutes = Math.max(0, grossMinutes - totalBreaks);
     const h = Math.floor(netMinutes / 60);
     const m = netMinutes % 60;
-    return `${h}h ${m}m`;
+
+    return {
+      formatted: `${h}h ${m}m`,
+      totalMinutes: netMinutes,
+      sessionCount: punches.length,
+      punches
+    };
   };
 
   // Calendar calculations for August 2026
@@ -192,129 +290,228 @@ export const AttendancePage = () => {
   const lateDays = attendanceRecords.filter(r => r.is_late).length;
   const wfhDays = attendanceRecords.filter(r => r.work_mode === WORK_MODES.WFH).length;
 
+  const isCheckedIn = !!todayRecord?.check_in_time && !todayRecord?.check_out_time;
+  const hasPunchedToday = !!todayRecord?.check_in_time || (todayRecord?.punches && todayRecord.punches.length > 0);
+  const dayDuration = calcTotalDayDuration(todayRecord, currentTime, sessionBreakMinutes);
+  const currentSessionNumber = isCheckedIn ? (todayRecord?.punches?.length || 1) : ((todayRecord?.punches?.length || 0) + 1);
+
   return (
     <div className="space-y-6 animate-fade-in text-zinc-900 dark:text-zinc-100">
       {/* Top Banner with Clock & Live Punch Console */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Punch In/Out Card */}
-        <Card className="lg:col-span-2 p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-zinc-100 dark:border-zinc-800">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">Daily Punch Console</h2>
+        <Card className="lg:col-span-2 p-6 flex flex-col justify-between">
+          <div>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-zinc-100 dark:border-zinc-800">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className={`w-2.5 h-2.5 rounded-full ${isCheckedIn ? 'bg-emerald-500 animate-pulse' : hasPunchedToday ? 'bg-blue-500' : 'bg-amber-500'}`} />
+                  <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">Daily Punch Console</h2>
+                  <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${isCheckedIn ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700'}`}>
+                    {isCheckedIn ? `Session #${currentSessionNumber} Active` : hasPunchedToday ? 'Shift Logged' : 'Ready'}
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                  Standard General Shift (09:30 – 18:30 IST) • Multi-Punch Enabled
+                </p>
               </div>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                Standard General Shift (09:30 – 18:30 IST) • 15m Grace Time
-              </p>
+
+              {/* Current Real-Time Clock */}
+              <div className="text-left sm:text-right">
+                <span className="font-mono text-xl font-bold tracking-tight text-zinc-900 dark:text-white">
+                  {format(currentTime, 'hh:mm:ss a')}
+                </span>
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-medium">
+                  {format(currentTime, 'EEEE, dd MMMM yyyy')}
+                </p>
+              </div>
             </div>
 
-            {/* Current Real-Time Clock */}
-            <div className="text-left sm:text-right">
-              <span className="font-mono text-xl font-bold tracking-tight text-zinc-900 dark:text-white">
-                {format(currentTime, 'hh:mm:ss a')}
-              </span>
-              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 font-medium">
-                {format(currentTime, 'EEEE, dd MMMM yyyy')}
-              </p>
-            </div>
-          </div>
+            {/* Work Mode Selection & Status */}
+            <div className="mt-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                {/* Work mode selector (Hidden for Admin, Work from Office is default and only option) */}
+                {!isAdminUser ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-zinc-500 dark:text-zinc-400 font-medium">Work Mode:</span>
+                    <div className="inline-flex rounded-lg p-0.5 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
+                      <button
+                        type="button"
+                        onClick={() => handleWorkModeChange(WORK_MODES.OFFICE)}
+                        className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                          workMode === WORK_MODES.OFFICE || workMode === 'office'
+                            ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs font-bold'
+                            : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <Building className="w-3.5 h-3.5" /> Office
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleWorkModeChange(WORK_MODES.WFH)}
+                        className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                          workMode === WORK_MODES.WFH || workMode === 'wfh'
+                            ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs font-bold'
+                            : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <Laptop className="w-3.5 h-3.5" /> WFH
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleWorkModeChange(WORK_MODES.ON_DUTY)}
+                        className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                          workMode === WORK_MODES.ON_DUTY || workMode === 'on_duty' || workMode === 'client' || workMode === 'client_site'
+                            ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs font-bold'
+                            : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <Briefcase className="w-3.5 h-3.5" /> Client
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-zinc-500 dark:text-zinc-400 font-medium">Work Mode:</span>
+                    <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 flex items-center gap-1.5">
+                      <Building className="w-3.5 h-3.5" /> Work from Office
+                    </span>
+                  </div>
+                )}
 
-          {/* Work Mode Selection & Status */}
-          <div className="mt-5 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="text-zinc-500 dark:text-zinc-400 font-medium">Work Mode:</span>
-                <div className="inline-flex rounded-lg p-0.5 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
-                  <button
-                    type="button"
-                    disabled={!!todayRecord?.check_in_time}
-                    onClick={() => setWorkMode(WORK_MODES.OFFICE)}
-                    className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
-                      workMode === WORK_MODES.OFFICE
-                        ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs'
-                        : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900'
-                    }`}
-                  >
-                    <Building className="w-3.5 h-3.5" /> Office
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!!todayRecord?.check_in_time}
-                    onClick={() => setWorkMode(WORK_MODES.WFH)}
-                    className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
-                      workMode === WORK_MODES.WFH
-                        ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs'
-                        : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900'
-                    }`}
-                  >
-                    <Laptop className="w-3.5 h-3.5" /> WFH
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!!todayRecord?.check_in_time}
-                    onClick={() => setWorkMode(WORK_MODES.CLIENT_SITE)}
-                    className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
-                      workMode === WORK_MODES.CLIENT_SITE
-                        ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs'
-                        : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900'
-                    }`}
-                  >
-                    <Briefcase className="w-3.5 h-3.5" /> Client
-                  </button>
+                {/* Status Badge */}
+                <div className="flex items-center gap-2">
+                  <span className="text-zinc-500 dark:text-zinc-400 font-medium">Status:</span>
+                  {isOnBreak ? (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 animate-pulse flex items-center gap-1">
+                      <Coffee className="w-3 h-3" /> On Break
+                    </span>
+                  ) : isCheckedIn ? (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Present (Session #{currentSessionNumber})
+                    </span>
+                  ) : hasPunchedToday ? (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-700">
+                      Punched Out ({dayDuration.sessionCount} Sessions)
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
+                      Not Punched In
+                    </span>
+                  )}
                 </div>
               </div>
 
-              {/* Status Badge */}
-              <div className="flex items-center gap-2">
-                <span className="text-zinc-500 dark:text-zinc-400 font-medium">Status:</span>
-                {todayRecord ? (
-                  <Badge variant={todayRecord.status}>{todayRecord.status}</Badge>
+              {/* Action Buttons: Punch In / Break / Punch Out */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                {/* Check In Button: Active whenever user is not currently checked in */}
+                {!isCheckedIn ? (
+                  <button
+                    type="button"
+                    disabled={actionLoading}
+                    onClick={handleCheckIn}
+                    className="py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm transition flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-emerald-600/20 active:scale-[0.98]"
+                  >
+                    <Play className="w-4 h-4 fill-current" />
+                    {hasPunchedToday ? `Punch In (Session #${currentSessionNumber})` : 'Punch In'}
+                  </button>
                 ) : (
-                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
-                    Not Punched In
-                  </span>
+                  <div className="py-3.5 px-4 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    In: {format(parseISO(todayRecord.check_in_time), 'hh:mm a')}
+                  </div>
+                )}
+
+                {/* Break Button */}
+                <button
+                  type="button"
+                  disabled={actionLoading || !isCheckedIn}
+                  onClick={handleToggleBreak}
+                  className={`py-3.5 px-4 rounded-xl font-bold text-xs sm:text-sm transition border flex items-center justify-center gap-2 ${
+                    !isCheckedIn
+                      ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 border-zinc-200 dark:border-zinc-800 cursor-not-allowed opacity-50'
+                      : isOnBreak
+                      ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 animate-pulse cursor-pointer shadow-md shadow-amber-500/20'
+                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700 cursor-pointer'
+                  } active:scale-[0.98]`}
+                >
+                  <Coffee className="w-4 h-4" />
+                  {isOnBreak ? 'Resume Work' : !isCheckedIn && hasPunchedToday ? `${(todayRecord?.break_minutes || 0) + sessionBreakMinutes}m Break Logged` : 'Take Break'}
+                </button>
+
+                {/* Check Out Button: Active whenever employee is currently checked in */}
+                {isCheckedIn ? (
+                  <button
+                    type="button"
+                    disabled={actionLoading}
+                    onClick={handleCheckOut}
+                    className="py-3.5 px-4 rounded-xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-2 bg-rose-600 hover:bg-rose-700 text-white cursor-pointer shadow-md shadow-rose-600/20 active:scale-[0.98]"
+                  >
+                    <Square className="w-4 h-4 fill-current" />
+                    Punch Out (Session #{currentSessionNumber})
+                  </button>
+                ) : (
+                  <div className="py-3.5 px-4 rounded-xl bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60 text-zinc-500 dark:text-zinc-400 font-medium text-xs sm:text-sm flex items-center justify-center gap-2">
+                    <Square className="w-4 h-4" />
+                    {hasPunchedToday ? `Out (${format(parseISO(todayRecord.check_out_time || new Date().toISOString()), 'hh:mm a')})` : 'Punch Out'}
+                  </div>
                 )}
               </div>
             </div>
 
-            {/* Action Buttons */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-              {/* Check In Button */}
-              <button
-                type="button"
-                disabled={actionLoading || !!todayRecord?.check_in_time}
-                onClick={handleCheckIn}
-                className="py-3 px-4 rounded-xl bg-zinc-900 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-900 font-semibold text-xs transition disabled:opacity-40 flex items-center justify-center gap-2 cursor-pointer shadow-xs"
-              >
-                <Play className="w-4 h-4" />
-                {todayRecord?.check_in_time ? `Punched In (${format(parseISO(todayRecord.check_in_time), 'hh:mm a')})` : 'Punch In'}
-              </button>
+            {/* Today's Multi-Punch History Log (if punches exist) */}
+            {dayDuration.punches.length > 0 && (
+              <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+                <div className="flex items-center justify-between text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 mb-2">
+                  <span>Today's Sessions ({dayDuration.punches.length})</span>
+                  <span>Accumulated: <strong className="text-zinc-900 dark:text-zinc-100 font-mono">{dayDuration.formatted}</strong></span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {dayDuration.punches.map((p, idx) => {
+                    const inStr = p.in ? format(parseISO(p.in), 'hh:mm a') : '—';
+                    const outStr = p.out ? format(parseISO(p.out), 'hh:mm a') : 'Active';
+                    const durationMins = p.out
+                      ? differenceInMinutes(parseISO(p.out), parseISO(p.in))
+                      : differenceInMinutes(currentTime, parseISO(p.in));
+                    const durH = Math.floor(Math.max(0, durationMins) / 60);
+                    const durM = Math.max(0, durationMins) % 60;
 
-              {/* Break Button */}
-              <button
-                type="button"
-                disabled={actionLoading || !todayRecord?.check_in_time || !!todayRecord?.check_out_time}
-                onClick={handleToggleBreak}
-                className={`py-3 px-4 rounded-xl font-semibold text-xs transition border cursor-pointer flex items-center justify-center gap-2 ${
-                  isOnBreak
-                    ? 'bg-amber-500 text-white border-amber-600 animate-pulse'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                } disabled:opacity-40`}
-              >
-                <Coffee className="w-4 h-4" />
-                {isOnBreak ? 'Resume Work' : 'Take Break'}
-              </button>
+                    return (
+                      <div
+                        key={idx}
+                        className={`text-[11px] px-2.5 py-1 rounded-lg border flex items-center gap-1.5 ${
+                          !p.out
+                            ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 font-medium'
+                            : 'bg-zinc-50 dark:bg-zinc-800/60 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400'
+                        }`}
+                      >
+                        <span className="font-semibold">#{idx + 1}:</span>
+                        <span>{inStr} – {outStr}</span>
+                        <span className="text-[10px] opacity-75">({durH}h {durM}m • {p.work_mode || 'office'})</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
 
-              {/* Check Out Button */}
+          {/* Quick Demo Controls & Reset Footer */}
+          <div className="mt-5 pt-3 border-t border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+            <div className="flex items-center gap-2">
+              <span className="inline-block w-2 h-2 rounded-full bg-teal-500" />
+              <span>Mode: <strong className="text-zinc-700 dark:text-zinc-300">{WORK_MODE_LABELS[workMode] || 'Office'}</strong></span>
+            </div>
+
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                disabled={actionLoading || !todayRecord?.check_in_time || !!todayRecord?.check_out_time}
-                onClick={handleCheckOut}
-                className="py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs transition disabled:opacity-40 flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                onClick={handleResetToday}
+                disabled={actionLoading}
+                className="text-[11px] font-semibold text-purple-600 dark:text-purple-400 hover:text-purple-700 hover:underline cursor-pointer flex items-center gap-1"
+                title="Reset today's punch to test cycle afresh"
               >
-                <Square className="w-4 h-4" />
-                {todayRecord?.check_out_time ? `Punched Out (${format(parseISO(todayRecord.check_out_time), 'hh:mm a')})` : 'Punch Out'}
+                ↻ Reset Today (Demo Mode)
               </button>
             </div>
           </div>
@@ -330,9 +527,14 @@ export const AttendancePage = () => {
               <div className="flex items-center justify-between pb-2 border-b border-zinc-100 dark:border-zinc-800">
                 <span className="text-zinc-500 dark:text-zinc-400">Total Shift Time:</span>
                 <span className="font-mono font-bold text-zinc-900 dark:text-zinc-100">
-                  {todayRecord?.check_in_time
-                    ? calcDurationFormatted(todayRecord.check_in_time, todayRecord.check_out_time, sessionBreakMinutes)
-                    : '0h 0m'}
+                  {dayDuration.formatted}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between pb-2 border-b border-zinc-100 dark:border-zinc-800">
+                <span className="text-zinc-500 dark:text-zinc-400">Sessions Completed:</span>
+                <span className="font-mono font-bold text-zinc-900 dark:text-zinc-100">
+                  {dayDuration.sessionCount} {dayDuration.sessionCount === 1 ? 'Session' : 'Sessions'}
                 </span>
               </div>
 
@@ -346,7 +548,7 @@ export const AttendancePage = () => {
               <div className="flex items-center justify-between">
                 <span className="text-zinc-500 dark:text-zinc-400">Punctuality:</span>
                 <span className={`font-semibold ${todayRecord?.is_late ? 'text-amber-600' : 'text-emerald-600'}`}>
-                  {todayRecord?.is_late ? 'Late Arrival' : todayRecord?.check_in_time ? 'On Time (09:30)' : 'Pending Punch'}
+                  {todayRecord?.is_late ? 'Late Arrival' : hasPunchedToday ? 'On Time (09:30)' : 'Pending Punch'}
                 </span>
               </div>
             </div>
@@ -431,108 +633,15 @@ export const AttendancePage = () => {
         </button>
       </div>
 
-      {/* TAB 1: Monthly Attendance Matrix Calendar */}
+      {/* TAB 1: Google Workspace Monthly Matrix & Schedule Calendar */}
       {activeTab === 'calendar' && (
-        <Card className="p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-            <div>
-              <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                {format(currentMonthDate, 'MMMM yyyy')} Attendance & Holiday Roster
-              </h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                Mon–Fri working days, Sat–Sun weekly off, and scheduled holidays
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3 text-[11px] text-zinc-600 dark:text-zinc-400">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Present</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> Half-Day/Late</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-indigo-500" /> Leave</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-zinc-300 dark:bg-zinc-700" /> Off</span>
-            </div>
-          </div>
-
-          {/* Calendar Grid */}
-          <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
-            {/* Days Header */}
-            <div className="grid grid-cols-7 bg-zinc-50 dark:bg-zinc-800/60 border-b border-zinc-200 dark:border-zinc-800 text-center py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-              <span>Mon</span>
-              <span>Tue</span>
-              <span>Wed</span>
-              <span>Thu</span>
-              <span>Fri</span>
-              <span className="text-zinc-400">Sat</span>
-              <span className="text-zinc-400">Sun</span>
-            </div>
-
-            {/* Day Cells */}
-            <div className="grid grid-cols-7 divide-x divide-y divide-zinc-200 dark:divide-zinc-800 bg-white dark:bg-zinc-900">
-              {Array.from({ length: startDayOffset }).map((_, i) => (
-                <div key={`empty-${i}`} className="min-h-[85px] bg-zinc-50/50 dark:bg-zinc-950/30 p-2" />
-              ))}
-
-              {daysInMonth.map((dayObj) => {
-                const dateStr = format(dayObj, 'yyyy-MM-dd');
-                const isWknd = isWeekend(dayObj);
-                const holiday = getIndianHoliday(dateStr);
-                const record = attendanceRecords.find(a => a.date === dateStr);
-                const isToday = dateStr === todayStr;
-                const isFutureDate = dateStr > todayStr;
-
-                return (
-                  <div
-                    key={dateStr}
-                    className={`min-h-[85px] p-2 transition-all relative flex flex-col justify-between ${
-                      isToday ? 'bg-zinc-100 dark:bg-zinc-800/80 font-bold' : isWknd ? 'bg-zinc-50/50 dark:bg-zinc-950/40' : ''
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className={`text-xs font-semibold ${
-                        isToday ? 'px-1.5 py-0.2 rounded bg-zinc-900 dark:bg-white text-white dark:text-zinc-900' : isWknd ? 'text-zinc-400' : 'text-zinc-800 dark:text-zinc-200'
-                      }`}>
-                        {format(dayObj, 'd')}
-                      </span>
-
-                      {holiday && (
-                        <span className="text-[9px] px-1.5 py-0.2 rounded font-semibold bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 truncate max-w-[65px]" title={holiday.name}>
-                          Holiday
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="mt-1">
-                      {holiday ? (
-                        <div className="text-[10px] font-semibold text-purple-600 dark:text-purple-400 leading-tight truncate">
-                          {holiday.name}
-                        </div>
-                      ) : record ? (
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-1">
-                            <span className={`w-1.5 h-1.5 rounded-full ${
-                              record.status === 'present' ? 'bg-emerald-500' : record.status === 'half-day' ? 'bg-amber-500' : 'bg-indigo-500'
-                            }`} />
-                            <span className="text-[10px] font-semibold text-zinc-900 dark:text-zinc-100 capitalize">
-                              {record.status}
-                            </span>
-                          </div>
-                          {record.check_in_time && (
-                            <p className="text-[9px] text-zinc-500 dark:text-zinc-400 font-mono">
-                              {format(parseISO(record.check_in_time), 'hh:mm')}
-                            </p>
-                          )}
-                        </div>
-                      ) : isWknd ? (
-                        <span className="text-[10px] text-zinc-400">Off</span>
-                      ) : (
-                        <span className="text-[10px] text-zinc-400 italic">No log</span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </Card>
+        <GoogleWorkspaceCalendar
+          records={attendanceRecords}
+          onRequestRegularization={(dateStr) => {
+            setSelectedLogForReg({ date: dateStr });
+            setIsRegModalOpen(true);
+          }}
+        />
       )}
 
       {/* TAB 2: Detailed Attendance Logs Table */}

@@ -72,18 +72,18 @@ export const DashboardHome = () => {
   };
 
   const handleQuickCheckOut = async () => {
-    if (!todayAttendance) return;
     setCheckingIn(true);
     try {
-      await attendanceService.checkOut(todayAttendance.id);
+      await attendanceService.checkOut(todayAttendance?.id, { userId: currentUser?.id });
       await loadData();
     } finally {
       setCheckingIn(false);
     }
   };
 
-  const isCheckedIn = !!todayAttendance?.check_in_time;
-  const isCheckedOut = !!todayAttendance?.check_out_time;
+  const isCheckedIn = !!todayAttendance?.check_in_time && !todayAttendance?.check_out_time;
+  const hasPunchedToday = !!todayAttendance?.check_in_time || (todayAttendance?.punches && todayAttendance.punches.length > 0);
+  const nextSessionNumber = (todayAttendance?.punches?.length || 0) + 1;
   const upcomingIndianHolidays = getUpcomingIndianHolidays ? getUpcomingIndianHolidays(new Date().toISOString().split('T')[0], 3) : [];
 
   return (
@@ -115,43 +115,41 @@ export const DashboardHome = () => {
               {format(currentTime, 'hh:mm:ss a')}
             </div>
             <p className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium">
-              {isCheckedOut ? 'Shift Completed' : isCheckedIn ? `Active (${todayAttendance?.work_mode || 'Office'})` : 'Punch In Pending'}
+              {isCheckedIn ? `Active Shift (${todayAttendance?.work_mode || 'Office'})` : hasPunchedToday ? 'Punched Out' : 'Punch In Pending'}
             </p>
           </div>
 
           {!isCheckedIn ? (
             <div className="flex items-center gap-2">
-              <select
-                value={workMode}
-                onChange={(e) => setWorkMode(e.target.value)}
-                className="bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 text-xs px-2.5 py-1.5 rounded-md border border-zinc-200 dark:border-zinc-700 focus:outline-none"
-              >
-                <option value={WORK_MODES?.OFFICE || 'office'}>Office</option>
-                <option value={WORK_MODES?.WFH || 'wfh'}>WFH</option>
-                <option value={WORK_MODES?.ON_DUTY || 'on_duty'}>On-Duty</option>
-              </select>
+              {!(isAdmin || currentUser?.role === 'admin') && (
+                <select
+                  value={workMode}
+                  onChange={(e) => setWorkMode(e.target.value)}
+                  className="bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 text-xs px-2.5 py-1.5 rounded-md border border-zinc-200 dark:border-zinc-700 focus:outline-none cursor-pointer"
+                >
+                  <option value={WORK_MODES?.OFFICE || 'office'}>Office</option>
+                  <option value={WORK_MODES?.WFH || 'wfh'}>WFH</option>
+                  <option value={WORK_MODES?.ON_DUTY || 'on_duty'}>On-Duty</option>
+                </select>
+              )}
               <button
                 type="button"
                 disabled={checkingIn}
                 onClick={handleQuickCheckIn}
-                className="px-4 py-1.5 rounded-md bg-zinc-900 dark:bg-white hover:bg-zinc-800 dark:hover:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-medium transition cursor-pointer"
+                className="px-4 py-1.5 rounded-md bg-zinc-900 dark:bg-white hover:bg-zinc-800 dark:hover:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-medium transition cursor-pointer shadow-xs"
               >
-                {checkingIn ? '...' : 'Check In'}
+                {checkingIn ? '...' : hasPunchedToday ? `Punch In (#${nextSessionNumber})` : 'Check In'}
               </button>
             </div>
-          ) : !isCheckedOut ? (
+          ) : (
             <button
               type="button"
               disabled={checkingIn}
               onClick={handleQuickCheckOut}
-              className="px-4 py-1.5 rounded-md bg-rose-600 hover:bg-rose-700 text-white text-xs font-medium transition cursor-pointer"
+              className="px-4 py-1.5 rounded-md bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition cursor-pointer shadow-xs"
             >
-              {checkingIn ? '...' : 'Check Out'}
+              {checkingIn ? '...' : `Punch Out`}
             </button>
-          ) : (
-            <span className="px-2.5 py-1 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 text-xs font-medium">
-              Completed
-            </span>
           )}
         </div>
       </div>
