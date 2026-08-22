@@ -96,11 +96,11 @@ export const AttendancePage = () => {
 
   const handleWorkModeChange = async (newMode) => {
     setWorkMode(newMode);
-    if (todayRecord?.id) {
+    if (todayRecord?.id || currentUser?.id) {
       setActionLoading(true);
       try {
-        await attendanceService.updateWorkMode(todayRecord.id, newMode);
-        toast.success(`Work Mode updated to ${WORK_MODE_LABELS[newMode] || newMode}`);
+        await attendanceService.updateWorkMode(todayRecord?.id, newMode, currentUser?.id);
+        toast.success(`Work Mode set to ${WORK_MODE_LABELS[newMode] || newMode}`);
         await loadData();
       } catch (e) {
         toast.error("Failed to update work mode");
@@ -331,7 +331,7 @@ export const AttendancePage = () => {
                       type="button"
                       onClick={() => handleWorkModeChange(WORK_MODES.OFFICE)}
                       className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
-                        workMode === WORK_MODES.OFFICE
+                        workMode === WORK_MODES.OFFICE || workMode === 'office'
                           ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs font-bold'
                           : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                       }`}
@@ -342,7 +342,7 @@ export const AttendancePage = () => {
                       type="button"
                       onClick={() => handleWorkModeChange(WORK_MODES.WFH)}
                       className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
-                        workMode === WORK_MODES.WFH
+                        workMode === WORK_MODES.WFH || workMode === 'wfh'
                           ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs font-bold'
                           : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                       }`}
@@ -351,9 +351,9 @@ export const AttendancePage = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleWorkModeChange(WORK_MODES.CLIENT_SITE)}
+                      onClick={() => handleWorkModeChange(WORK_MODES.ON_DUTY)}
                       className={`px-3 py-1 text-xs rounded-md font-medium transition cursor-pointer flex items-center gap-1.5 ${
-                        workMode === WORK_MODES.CLIENT_SITE
+                        workMode === WORK_MODES.ON_DUTY || workMode === 'on_duty' || workMode === 'client' || workMode === 'client_site'
                           ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs font-bold'
                           : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                       }`}
