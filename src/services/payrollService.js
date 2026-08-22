@@ -85,25 +85,29 @@ export const payrollService = {
   /**
    * Get salary profile for an employee
    */
+  getMockEmployeeSalaryProfile(userId) {
+    const user = mockUsers.find(u => u.id === userId || u.employee_id === userId) || mockUsers[0];
+    const monthly = user ? (user.salary ? Math.round(user.salary / 12) : 100000) : 100000;
+    const breakdown = calculateSalaryBreakdown(monthly, DEFAULT_SALARY_COMPONENTS, STATUTORY_CONFIG);
+    return {
+      data: {
+        user_id: userId,
+        wage_type: 'Fixed Wage',
+        monthly_wage: monthly,
+        yearly_wage: monthly * 12,
+        working_days_per_week: 5,
+        break_time_mins: 60,
+        statutory: STATUTORY_CONFIG,
+        components: DEFAULT_SALARY_COMPONENTS,
+        breakdown
+      },
+      error: null
+    };
+  },
+
   async getEmployeeSalaryProfile(userId) {
     if (IS_MOCK) {
-      const user = mockUsers.find(u => u.id === userId || u.employee_id === userId);
-      const monthly = user?.salary ? Math.round(user.salary / 12) : 250000;
-      const breakdown = calculateSalaryBreakdown(monthly);
-      return {
-        data: {
-          user_id: userId,
-          wage_type: 'Fixed Wage',
-          monthly_wage: monthly,
-          yearly_wage: monthly * 12,
-          working_days_per_week: 5,
-          break_time_mins: 60,
-          statutory: STATUTORY_CONFIG,
-          components: DEFAULT_SALARY_COMPONENTS,
-          breakdown
-        },
-        error: null
-      };
+      return this.getMockEmployeeSalaryProfile(userId);
     }
 
     try {
@@ -114,12 +118,12 @@ export const payrollService = {
         .single();
 
       if (error || !data) {
-        return this.getEmployeeSalaryProfile(userId);
+        return this.getMockEmployeeSalaryProfile(userId);
       }
       const breakdown = calculateSalaryBreakdown(data.monthly_wage, data.components || DEFAULT_SALARY_COMPONENTS);
       return { data: { ...data, breakdown }, error: null };
     } catch (e) {
-      return this.getEmployeeSalaryProfile(userId);
+      return this.getMockEmployeeSalaryProfile(userId);
     }
   },
 
@@ -176,39 +180,77 @@ export const payrollService = {
   },
 
   async getAllPayroll() {
-    // Get list of removed user IDs from localStorage if available
-    let removedIds = [];
+    if (IS_MOCK) {
+      // Get list of removed user IDs from localStorage if available
+      let removedIds = [];
+      try {
+        const stored = localStorage.getItem('dayflow_removed_payroll_ids');
+        if (stored) removedIds = JSON.parse(stored);
+      } catch (e) {}
+
+      const activeEmployees = mockUsers.filter(u =>
+        u.role === 'employee' && !removedIds.includes(u.id) && !removedIds.includes(u.employee_id)
+      );
+
+      const list = activeEmployees.map(user => {
+        const monthly = user.salary ? Math.round(user.salary / 12) : 100000;
+        const b = calculateSalaryBreakdown(monthly);
+        return {
+          user_id: user.id,
+          users: {
+            id: user.id,
+            name: user.name,
+            department: user.department,
+            employee_id: user.employee_id,
+            email: user.email,
+            job_title: user.job_title
+          },
+          base_salary: monthly * 12,
+          deductions: b.totalDeductions * 12,
+          net_salary: b.netTakeHome * 12,
+          monthly_net: b.netTakeHome,
+          breakdown: b
+        };
+      });
+      return { data: list, error: null };
+    }
+
     try {
-      const stored = localStorage.getItem('dayflow_removed_payroll_ids');
-      if (stored) removedIds = JSON.parse(stored);
-    } catch (e) {}
+      const { data: users, error } = await supabase
+        .from('users')
+        .select('*, salary_profiles(*)')
+        .eq('role', 'employee')
+        .order('name');
 
-    // Only include employee roles (not system admins) and filter out explicitly removed/unwanted employees
-    const activeEmployees = mockUsers.filter(u =>
-      u.role === 'employee' && !removedIds.includes(u.id) && !removedIds.includes(u.employee_id)
-    );
+      if (error) throw error;
 
-    const list = activeEmployees.map(user => {
-      const monthly = user.salary ? Math.round(user.salary / 12) : 100000;
-      const b = calculateSalaryBreakdown(monthly);
-      return {
-        user_id: user.id,
-        users: {
-          id: user.id,
-          name: user.name,
-          department: user.department,
-          employee_id: user.employee_id,
-          email: user.email,
-          job_title: user.job_title
-        },
-        base_salary: monthly * 12,
-        deductions: b.totalDeductions * 12,
-        net_salary: b.netTakeHome * 12,
-        monthly_net: b.netTakeHome,
-        breakdown: b
-      };
-    });
-    return { data: list, error: null };
+      const list = (users || []).map(user => {
+        const profile = user.salary_profiles?.[0] || user.salary_profiles || {};
+        const monthly = profile.monthly_wage ? Number(profile.monthly_wage) : (user.salary ? Math.round(Number(user.salary) / 12) : 75000);
+        const b = calculateSalaryBreakdown(monthly, profile.components || DEFAULT_SALARY_COMPONENTS, profile.statutory || STATUTORY_CONFIG);
+        return {
+          user_id: user.id,
+          users: {
+            id: user.id,
+            name: user.name,
+            department: user.department,
+            employee_id: user.employee_id,
+            email: user.email,
+            job_title: user.job_title
+          },
+          base_salary: monthly * 12,
+          deductions: b.totalDeductions * 12,
+          net_salary: b.netTakeHome * 12,
+          monthly_net: b.netTakeHome,
+          breakdown: b
+        };
+      });
+
+      return { data: list, error: null };
+    } catch (err) {
+      console.warn("Supabase getAllPayroll error:", err);
+      return { data: [], error: err.message };
+    }
   },
 
   async removeEmployeeFromPayroll(userId) {

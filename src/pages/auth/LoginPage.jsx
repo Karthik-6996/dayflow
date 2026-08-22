@@ -27,6 +27,33 @@ export const LoginPage = () => {
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [updatingPassword, setUpdatingPassword] = useState(false);
 
+  // Forgot Password Modal State
+  const [isForgotModalOpen, setIsForgotModalOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState(false);
+
+  const { resetPassword: requestPasswordReset } = useAuth();
+
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    if (!resetEmail || !resetEmail.includes('@')) {
+      toast.error("Please enter a valid email address.");
+      return;
+    }
+
+    setResetLoading(true);
+    try {
+      await requestPasswordReset(resetEmail.trim());
+      setResetSuccess(true);
+      toast.success(`Password recovery link sent to ${resetEmail}!`);
+    } catch (err) {
+      toast.error(err.message || "Failed to send reset link.");
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -217,6 +244,16 @@ export const LoginPage = () => {
                 <label className="block font-medium text-zinc-700 dark:text-zinc-300">
                   Password
                 </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResetEmail(loginIdentifier.includes('@') ? loginIdentifier : '');
+                    setIsForgotModalOpen(true);
+                  }}
+                  className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition cursor-pointer"
+                >
+                  Forgot Password?
+                </button>
               </div>
               <div className="relative">
                 <Lock className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -306,6 +343,77 @@ export const LoginPage = () => {
             {updatingPassword ? 'Saving...' : 'Set Password & Enter Portal'}
           </button>
         </form>
+      </Modal>
+
+      {/* Forgot Password Recovery Modal */}
+      <Modal
+        isOpen={isForgotModalOpen}
+        onClose={() => {
+          setIsForgotModalOpen(false);
+          setResetSuccess(false);
+        }}
+        title="Reset Account Password"
+        subtitle="Enter your registered work email to receive password reset instructions."
+      >
+        {resetSuccess ? (
+          <div className="space-y-4 text-center py-3 text-xs">
+            <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 mx-auto flex items-center justify-center font-bold">
+              ✓
+            </div>
+            <div>
+              <h4 className="font-bold text-zinc-900 dark:text-white text-sm">Recovery Email Dispatched</h4>
+              <p className="text-zinc-500 dark:text-zinc-400 mt-1">
+                We've sent recovery instructions to <span className="font-semibold text-zinc-800 dark:text-zinc-200">{resetEmail}</span>. Please check your inbox.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setIsForgotModalOpen(false);
+                setResetSuccess(false);
+              }}
+              className="w-full py-2.5 px-4 rounded-lg bg-zinc-900 dark:bg-white hover:bg-zinc-800 dark:hover:bg-zinc-100 text-white dark:text-zinc-900 font-semibold text-xs transition cursor-pointer"
+            >
+              Back to Sign In
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleForgotPassword} className="space-y-4 text-xs">
+            <div>
+              <label className="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                Registered Work Email *
+              </label>
+              <div className="relative">
+                <Mail className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="email"
+                  required
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  placeholder="name@company.com"
+                  className="w-full pl-9 pr-3 py-2 text-xs rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-600"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsForgotModalOpen(false)}
+                className="px-3.5 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 font-medium transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={resetLoading}
+                className="px-4 py-2 rounded-lg bg-zinc-900 dark:bg-white hover:bg-zinc-800 dark:hover:bg-zinc-100 text-white dark:text-zinc-900 font-semibold transition disabled:opacity-60 cursor-pointer"
+              >
+                {resetLoading ? 'Sending...' : 'Send Reset Link'}
+              </button>
+            </div>
+          </form>
+        )}
       </Modal>
     </div>
   );
