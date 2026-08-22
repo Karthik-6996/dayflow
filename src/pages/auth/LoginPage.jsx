@@ -12,6 +12,9 @@ export const LoginPage = () => {
   const navigate = useNavigate();
   const { login, isMockMode } = useAuth();
   const { isDark, toggleTheme } = useTheme();
+
+  // Role toggle: 'employee' | 'admin'
+  const [selectedRole, setSelectedRole] = useState('employee');
   const [loginIdentifier, setLoginIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -30,7 +33,9 @@ export const LoginPage = () => {
     setLoading(true);
 
     try {
-      const user = await login(loginIdentifier, password);
+      // Pass the selectedRole so the backend verifies role permission
+      const user = await login(loginIdentifier, password, selectedRole);
+
       // Check if first login password change is required
       if (user?.must_change_password) {
         setFirstLoginUser(user);
@@ -73,6 +78,7 @@ export const LoginPage = () => {
   };
 
   const fillQuickDemo = (role) => {
+    setSelectedRole(role);
     if (role === 'admin') {
       setLoginIdentifier('admin@dayflow.internal');
       setPassword('admin@123');
@@ -103,13 +109,51 @@ export const LoginPage = () => {
           Sign in to Dayflow HRMS
         </h2>
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-          Enter your Login ID (e.g. OIJODO20230001) or Email
+          Select your portal role and sign in with your Login ID or Email
         </p>
       </div>
 
       <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white dark:bg-zinc-900 py-8 px-6 sm:px-8 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm">
-          {/* Quick Demo Credentials */}
+          {/* Portal Role Selector (Employee vs Admin / HR) */}
+          <div className="mb-5">
+            <label className="block text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-2">
+              Sign In As
+            </label>
+            <div className="grid grid-cols-2 gap-2 p-1 bg-zinc-100 dark:bg-zinc-800/80 rounded-xl border border-zinc-200 dark:border-zinc-700">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedRole('employee');
+                  setError('');
+                }}
+                className={`py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                  selectedRole === 'employee'
+                    ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs'
+                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                }`}
+              >
+                <User className="w-3.5 h-3.5" /> Employee Portal
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedRole('admin');
+                  setError('');
+                }}
+                className={`py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                  selectedRole === 'admin'
+                    ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs'
+                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                }`}
+              >
+                <Shield className="w-3.5 h-3.5" /> Admin / HR Portal
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Demo Credentials Switcher */}
           {isMockMode && (
             <div className="mb-5 p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200/80 dark:border-zinc-700/60">
               <div className="mb-2 flex items-center justify-between">
@@ -121,16 +165,24 @@ export const LoginPage = () => {
                 <button
                   type="button"
                   onClick={() => fillQuickDemo('employee')}
-                  className="flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition cursor-pointer"
+                  className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg border text-xs font-medium transition cursor-pointer ${
+                    selectedRole === 'employee'
+                      ? 'bg-white dark:bg-zinc-900 border-zinc-400 dark:border-zinc-600 text-zinc-900 dark:text-white font-semibold'
+                      : 'bg-white/50 dark:bg-zinc-900/50 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400'
+                  }`}
                 >
-                  <User className="w-3.5 h-3.5" /> Employee
+                  <User className="w-3.5 h-3.5" /> Employee Demo
                 </button>
                 <button
                   type="button"
                   onClick={() => fillQuickDemo('admin')}
-                  className="flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition cursor-pointer"
+                  className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg border text-xs font-medium transition cursor-pointer ${
+                    selectedRole === 'admin'
+                      ? 'bg-white dark:bg-zinc-900 border-zinc-400 dark:border-zinc-600 text-zinc-900 dark:text-white font-semibold'
+                      : 'bg-white/50 dark:bg-zinc-900/50 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400'
+                  }`}
                 >
-                  <Shield className="w-3.5 h-3.5" /> Admin
+                  <Shield className="w-3.5 h-3.5" /> Admin Demo
                 </button>
               </div>
             </div>
@@ -145,7 +197,7 @@ export const LoginPage = () => {
 
             <div>
               <label className="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                Login ID or Work Email
+                {selectedRole === 'admin' ? 'Admin Email / Login ID' : 'Employee ID or Work Email'}
               </label>
               <div className="relative">
                 <Mail className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -154,7 +206,7 @@ export const LoginPage = () => {
                   required
                   value={loginIdentifier}
                   onChange={(e) => setLoginIdentifier(e.target.value)}
-                  placeholder="e.g. OIJODO20230001 or name@company.com"
+                  placeholder={selectedRole === 'admin' ? 'admin@dayflow.internal' : 'e.g. DF-1001 or name@company.com'}
                   className="w-full pl-9 pr-3 py-2 text-xs rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-600 transition"
                 />
               </div>
@@ -190,9 +242,16 @@ export const LoginPage = () => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full mt-2 py-2.5 px-4 rounded-lg bg-zinc-900 dark:bg-white hover:bg-zinc-800 dark:hover:bg-zinc-100 text-white dark:text-zinc-900 font-semibold text-xs transition shadow-xs disabled:opacity-60 cursor-pointer"
+              className="w-full mt-2 py-2.5 px-4 rounded-lg bg-zinc-900 dark:bg-white hover:bg-zinc-800 dark:hover:bg-zinc-100 text-white dark:text-zinc-900 font-semibold text-xs transition shadow-xs disabled:opacity-60 cursor-pointer flex items-center justify-center gap-1.5"
             >
-              {loading ? 'Signing in...' : 'Sign In'}
+              {loading ? (
+                'Signing in...'
+              ) : (
+                <>
+                  {selectedRole === 'admin' ? <Shield className="w-3.5 h-3.5" /> : <User className="w-3.5 h-3.5" />}
+                  <span>Sign In as {selectedRole === 'admin' ? 'Administrator' : 'Employee'}</span>
+                </>
+              )}
             </button>
           </form>
 
