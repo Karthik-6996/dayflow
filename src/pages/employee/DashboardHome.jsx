@@ -78,6 +78,7 @@ export const DashboardHome = () => {
   };
 
   const isCheckedIn = !!todayAttendance?.check_in_time && !todayAttendance?.check_out_time;
+  const isCheckedOut = !!todayAttendance?.check_out_time;
   const hasPunchedToday = !!todayAttendance?.check_in_time || (todayAttendance?.punches && todayAttendance.punches.length > 0);
   const nextSessionNumber = (todayAttendance?.punches?.length || 0) + 1;
   const upcomingIndianHolidays = getUpcomingIndianHolidays ? getUpcomingIndianHolidays(new Date().toISOString().split('T')[0], 3) : [];
