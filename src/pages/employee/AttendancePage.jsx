@@ -31,11 +31,7 @@ import { GoogleWorkspaceCalendar } from '../../components/calendar/GoogleWorkspa
 
 export const AttendancePage = () => {
   const { currentUser, isAdmin } = useAuth();
-<<<<<<< Updated upstream
   const isAdminUser = Boolean(isAdmin || currentUser?.role === 'admin');
-=======
-  const isAdminUser = isAdmin || currentUser?.role === 'admin';
->>>>>>> Stashed changes
 
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [regularizations, setRegularizations] = useState([]);
