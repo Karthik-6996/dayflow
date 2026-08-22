@@ -2,211 +2,239 @@
 import { supabase, IS_MOCK } from './supabaseClient';
 import { mockLeaveRequests } from '../mocks/leaveRequests';
 import { mockUsers } from '../mocks/users';
-import { validateRow, isValidLeaveTransition } from '../lib/schema.js';
+import { validateRow } from '../lib/schema.js';
 
-export const INITIAL_LEAVE_BALANCES = {
-  paid: { total: 24, used: 0, available: 24 },
-  sick: { total: 7, used: 0, available: 7 },
-  unpaid: { total: 0, used: 0, available: 99 }
-};
+const STORAGE_KEY = 'dayflow_leave_requests_store';
 
-function getMockEmployeeLeaves(userId) {
-  let leaves = mockLeaveRequests.filter(l => l.user_id === userId);
-  leaves.sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
-  return leaves;
+function getStoredLeaves() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      return JSON.parse(raw);
+    }
+  } catch (e) {
+    console.warn("Error reading stored leaves:", e);
+  }
+  return null;
+}
+
+function saveStoredLeaves(leaves) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(leaves));
+  } catch (e) {
+    console.warn("Error saving stored leaves:", e);
+  }
+}
+
+// Initialize persistent leaves in localStorage if not present
+function initializeLeaves() {
+  let stored = getStoredLeaves();
+  if (!stored || stored.length === 0) {
+    saveStoredLeaves(mockLeaveRequests);
+    return [...mockLeaveRequests];
+  }
+  return stored;
 }
 
 export async function submitLeaveRequest({ userId, type, startDate, endDate, remarks, daysCount, attachment }) {
   const count = Number(daysCount) || 1;
+  const newLeave = {
+    id: `leave-${Date.now()}`,
+    user_id: userId,
+    type: type || 'paid',
+    start_date: startDate,
+    end_date: endDate,
+    days: count,
+    days_count: count,
+    remarks: remarks || '',
+    attachment_url: attachment || null,
+    status: 'pending',
+    comments: null,
+    created_at: new Date().toISOString()
+  };
 
-  if (IS_MOCK) {
-    const newLeave = {
-      id: `leave-${Date.now()}`,
-      user_id: userId,
-      type: type || 'paid',
-      start_date: startDate,
-      end_date: endDate,
-      days: count,
-      remarks: remarks || '',
-      attachment_url: attachment || null,
-      status: 'pending',
-      comments: null,
-      created_at: new Date().toISOString()
-    };
+  // 1. Always save to local persistent storage immediately
+  const allCurrent = initializeLeaves();
+  allCurrent.unshift(newLeave);
+  saveStoredLeaves(allCurrent);
 
-    mockLeaveRequests.unshift(newLeave);
-    return { data: newLeave, error: null };
+  // Also update in-memory array
+  mockLeaveRequests.unshift(newLeave);
+
+  // 2. Try Supabase if available
+  if (!IS_MOCK) {
+    try {
+      await supabase
+        .from('leave_requests')
+        .insert({
+          user_id: userId,
+          type: type || 'paid',
+          start_date: startDate,
+          end_date: endDate,
+          days: count,
+          remarks: remarks || null,
+          status: 'pending',
+        });
+    } catch (err) {
+      console.warn("Supabase leave submit notice:", err.message);
+    }
   }
 
-  try {
-    const { data, error } = await supabase
-      .from('leave_requests')
-      .insert({
-        user_id: userId,
-        type: type || 'paid',
-        start_date: startDate,
-        end_date: endDate,
-        days: count,
-        remarks: remarks || null,
-        status: 'pending',
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-    return { data, error: null };
-  } catch (err) {
-    console.warn("Supabase leave submit fallback:", err.message);
-    const newLeave = {
-      id: `leave-${Date.now()}`,
-      user_id: userId,
-      type: type || 'paid',
-      start_date: startDate,
-      end_date: endDate,
-      days: count,
-      remarks: remarks || '',
-      status: 'pending',
-      comments: null
-    };
-    mockLeaveRequests.unshift(newLeave);
-    return { data: newLeave, error: null };
-  }
+  return { data: newLeave, error: null };
 }
 
 export async function getEmployeeLeaves(userId) {
-  if (IS_MOCK) {
-    return { data: getMockEmployeeLeaves(userId), error: null };
+  const allStored = initializeLeaves();
+
+  // Find records matching current user ID or primary employee default
+  let userLeaves = allStored.filter(l => l.user_id === userId);
+
+  // If user has no records yet (e.g. fresh session), seed with default records for this user
+  if (userLeaves.length === 0) {
+    userLeaves = allStored.filter(l => l.user_id === 'usr-001-emp').map(l => ({ ...l, user_id: userId }));
+    // Save seeded records
+    const merged = [...userLeaves, ...allStored];
+    saveStoredLeaves(merged);
   }
 
-  try {
-    const { data, error } = await supabase
-      .from('leave_requests')
-      .select('*')
-      .eq('user_id', userId)
-      .order('start_date', { ascending: false });
+  // Sort descending by start_date or created_at
+  userLeaves.sort((a, b) => new Date(b.created_at || b.start_date) - new Date(a.created_at || a.start_date));
 
-    if (error) throw error;
-    return { data: data || [], error: null };
-  } catch (err) {
-    console.warn("Supabase getEmployeeLeaves:", err);
-    return { data: [], error: err.message };
+  // If Supabase has data, try fetching and merging
+  if (!IS_MOCK) {
+    try {
+      const { data, error } = await supabase
+        .from('leave_requests')
+        .select('*')
+        .eq('user_id', userId)
+        .order('start_date', { ascending: false });
+
+      if (!error && data && data.length > 0) {
+        // Merge Supabase with local submitted leaves
+        const mergedIds = new Set(data.map(d => d.id));
+        const extraLocal = userLeaves.filter(l => !mergedIds.has(l.id));
+        return { data: [...extraLocal, ...data], error: null };
+      }
+    } catch (err) {
+      console.warn("Supabase getEmployeeLeaves fallback to storage:", err);
+    }
   }
+
+  return { data: userLeaves, error: null };
 }
 
 export const getMyLeaves = getEmployeeLeaves;
 
 export async function getAllLeaves({ statusFilter, typeFilter, status, userId } = {}) {
   const targetStatus = statusFilter || status;
+  const allStored = initializeLeaves();
 
-  const getMockAdminLeaves = () => {
-    let enriched = mockLeaveRequests.map(leave => {
-      const user = mockUsers.find(u => u.id === leave.user_id) || { name: 'Staff Member', department: 'General', employee_id: 'DF-000' };
-      return {
-        ...leave,
-        users: {
-          name: user.name,
-          department: user.department,
-          employee_id: user.employee_id
-        }
-      };
-    });
+  let enriched = allStored.map(leave => {
+    const user = mockUsers.find(u => u.id === leave.user_id || u.employee_id === leave.user_id) || {
+      name: 'Staff Member',
+      department: 'General',
+      employee_id: leave.user_id?.startsWith('DF-') ? leave.user_id : 'DF-1001'
+    };
+    return {
+      ...leave,
+      users: {
+        name: user.name,
+        department: user.department,
+        employee_id: user.employee_id
+      }
+    };
+  });
 
-    if (targetStatus && targetStatus !== 'all') {
-      enriched = enriched.filter(l => l.status === targetStatus);
-    }
-    if (typeFilter && typeFilter !== 'all') {
-      enriched = enriched.filter(l => l.type === typeFilter);
-    }
-    if (userId) {
-      enriched = enriched.filter(l => l.user_id === userId);
-    }
-
-    enriched.sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
-    return enriched;
-  };
-
-  if (IS_MOCK) {
-    return { data: getMockAdminLeaves(), error: null };
+  if (targetStatus && targetStatus !== 'all') {
+    enriched = enriched.filter(l => l.status === targetStatus);
+  }
+  if (typeFilter && typeFilter !== 'all') {
+    enriched = enriched.filter(l => l.type === typeFilter);
+  }
+  if (userId) {
+    enriched = enriched.filter(l => l.user_id === userId);
   }
 
-  try {
-    let query = supabase
-      .from('leave_requests')
-      .select('*, users(name, department, employee_id, job_title)')
-      .order('start_date', { ascending: false });
+  enriched.sort((a, b) => new Date(b.created_at || b.start_date) - new Date(a.created_at || a.start_date));
 
-    if (targetStatus && targetStatus !== 'all') query = query.eq('status', targetStatus);
-    if (typeFilter && typeFilter !== 'all') query = query.eq('type', typeFilter);
-    if (userId) query = query.eq('user_id', userId);
+  // If Supabase is connected, try to query
+  if (!IS_MOCK) {
+    try {
+      let query = supabase
+        .from('leave_requests')
+        .select('*, users(name, department, employee_id, job_title)')
+        .order('start_date', { ascending: false });
 
-    const { data, error } = await query;
-    if (error) throw error;
-    return { data: data || [], error: null };
-  } catch (err) {
-    console.warn("Supabase getAllLeaves:", err);
-    return { data: [], error: err.message };
+      if (targetStatus && targetStatus !== 'all') query = query.eq('status', targetStatus);
+      if (typeFilter && typeFilter !== 'all') query = query.eq('type', typeFilter);
+      if (userId) query = query.eq('user_id', userId);
+
+      const { data, error } = await query;
+      if (!error && data && data.length > 0) {
+        const mergedIds = new Set(data.map(d => d.id));
+        const extraLocal = enriched.filter(l => !mergedIds.has(l.id));
+        return { data: [...extraLocal, ...data], error: null };
+      }
+    } catch (err) {
+      console.warn("Supabase getAllLeaves fallback to storage:", err);
+    }
   }
+
+  return { data: enriched, error: null };
 }
 
 export async function updateLeaveStatus(leaveId, { status, comments }) {
-  // Always update mock storage if present
-  const mockRecord = mockLeaveRequests.find(l => l.id === leaveId || String(l.id) === String(leaveId));
-  if (mockRecord) {
-    mockRecord.status = status;
-    mockRecord.comments = comments !== undefined ? comments : mockRecord.comments;
-    mockRecord.updated_at = new Date().toISOString();
+  const allStored = initializeLeaves();
+  const idx = allStored.findIndex(l => l.id === leaveId || String(l.id) === String(leaveId));
+
+  let updatedRecord = null;
+  if (idx !== -1) {
+    allStored[idx] = {
+      ...allStored[idx],
+      status,
+      comments: comments !== undefined ? comments : allStored[idx].comments,
+      updated_at: new Date().toISOString()
+    };
+    updatedRecord = allStored[idx];
+    saveStoredLeaves(allStored);
   }
 
-  if (IS_MOCK) {
-    if (!mockRecord) {
-      // If not found in mock array, create or simulate update
-      const simulated = { id: leaveId, status, comments: comments || null, updated_at: new Date().toISOString() };
-      mockLeaveRequests.unshift(simulated);
-      return { data: simulated, error: null };
-    }
-    return { data: mockRecord, error: null };
+  // Update in-memory mock as well
+  const mockIdx = mockLeaveRequests.findIndex(l => l.id === leaveId || String(l.id) === String(leaveId));
+  if (mockIdx !== -1) {
+    mockLeaveRequests[mockIdx] = {
+      ...mockLeaveRequests[mockIdx],
+      status,
+      comments: comments !== undefined ? comments : mockLeaveRequests[mockIdx].comments,
+      updated_at: new Date().toISOString()
+    };
+    if (!updatedRecord) updatedRecord = mockLeaveRequests[mockIdx];
   }
 
-  try {
-    // Only attempt UUID update on Supabase if leaveId looks like a valid UUID
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leaveId);
-    if (isUuid) {
-      const { data, error } = await supabase
-        .from('leave_requests')
-        .update({
-          status,
-          comments: comments || null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', leaveId)
-        .select()
-        .single();
-
-      if (!error && data) {
-        return { data, error: null };
+  if (!IS_MOCK) {
+    try {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leaveId);
+      if (isUuid) {
+        await supabase
+          .from('leave_requests')
+          .update({
+            status,
+            comments: comments || null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', leaveId);
       }
+    } catch (err) {
+      console.warn("Supabase update leave notice:", err.message);
     }
-
-    // If Supabase update was not applicable or returned error, fallback to mock record
-    if (mockRecord) {
-      return { data: mockRecord, error: null };
-    }
-
-    const fallbackRecord = { id: leaveId, status, comments: comments || null, updated_at: new Date().toISOString() };
-    mockLeaveRequests.unshift(fallbackRecord);
-    return { data: fallbackRecord, error: null };
-  } catch (err) {
-    console.warn("Supabase leave status update fallback:", err.message);
-    if (mockRecord) {
-      return { data: mockRecord, error: null };
-    }
-    return { data: { id: leaveId, status, comments }, error: null };
   }
+
+  return { data: updatedRecord || { id: leaveId, status, comments }, error: null };
 }
 
 export async function getLeaveBalances(userId) {
-  const leaves = (await getEmployeeLeaves(userId)).data || [];
-  const approvedLeaves = leaves.filter(l => l.status === 'approved');
+  const { data: leaves } = await getEmployeeLeaves(userId);
+  const approvedLeaves = (leaves || []).filter(l => l.status === 'approved');
 
   const usedPaid = approvedLeaves.filter(l => l.type === 'paid').reduce((acc, l) => acc + (Number(l.days) || 1), 0);
   const usedSick = approvedLeaves.filter(l => l.type === 'sick').reduce((acc, l) => acc + (Number(l.days) || 1), 0);

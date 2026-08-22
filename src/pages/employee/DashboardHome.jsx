@@ -159,6 +159,9 @@ export const DashboardHome = () => {
         toast.error(error);
       } else {
         toast.success("Leave request submitted for HR approval!");
+        if (data) {
+          setLeaves(prev => [data, ...prev.filter(p => p.id !== data.id)]);
+        }
         setIsLeaveModalOpen(false);
         setLeaveForm({ type: 'paid', startDate: '', endDate: '', remarks: '' });
         await loadDashboardData();
