@@ -15,10 +15,19 @@ export const TABLES = {
   },
 
   attendance: {
-    columns: ['id', 'user_id', 'date', 'check_in_time', 'check_out_time', 'status'],
+    columns: ['id', 'user_id', 'date', 'check_in_time', 'check_out_time', 'status', 'work_mode', 'break_minutes', 'is_late', 'regularization_id', 'location'],
     required: ['id', 'user_id', 'date', 'status'],
     enums: {
-      status: ['present', 'absent', 'half-day', 'leave']
+      status: ['present', 'absent', 'half-day', 'leave', 'holiday', 'weekend'],
+      work_mode: ['office', 'wfh', 'on_duty']
+    }
+  },
+
+  attendance_regularizations: {
+    columns: ['id', 'attendance_id', 'user_id', 'date', 'requested_check_in', 'requested_check_out', 'reason', 'remarks', 'status', 'admin_comments', 'created_at'],
+    required: ['id', 'user_id', 'date', 'requested_check_in', 'requested_check_out', 'reason', 'status'],
+    enums: {
+      status: ['pending', 'approved', 'rejected']
     }
   },
 

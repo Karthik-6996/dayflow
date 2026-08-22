@@ -44,6 +44,8 @@ export const ATTENDANCE_STATUS = Object.freeze({
   ABSENT:   'absent',
   HALF_DAY: 'half-day',
   LEAVE:    'leave',
+  HOLIDAY:  'holiday',
+  WEEKEND:  'weekend',
 });
 
 export const ATTENDANCE_STATUS_LABELS = Object.freeze({
@@ -51,7 +53,48 @@ export const ATTENDANCE_STATUS_LABELS = Object.freeze({
   [ATTENDANCE_STATUS.ABSENT]:   'Absent',
   [ATTENDANCE_STATUS.HALF_DAY]: 'Half Day',
   [ATTENDANCE_STATUS.LEAVE]:    'On Leave',
+  [ATTENDANCE_STATUS.HOLIDAY]:  'Public Holiday',
+  [ATTENDANCE_STATUS.WEEKEND]:  'Weekly Off',
 });
+
+// ── Work Modes (Indian Standard Corporate Setup) ────────────────
+export const WORK_MODES = Object.freeze({
+  OFFICE:  'office',
+  WFH:     'wfh',
+  ON_DUTY: 'on_duty',
+});
+
+export const WORK_MODE_LABELS = Object.freeze({
+  [WORK_MODES.OFFICE]:  'Work from Office',
+  [WORK_MODES.WFH]:     'Work from Home',
+  [WORK_MODES.ON_DUTY]: 'Client On-Duty (OD)',
+});
+
+// ── Shift Configuration (Indian Standard General Shift - IST) ──
+export const SHIFT_CONFIG = Object.freeze({
+  START_TIME: '09:30',        // 09:30 AM IST
+  END_TIME: '18:30',          // 06:30 PM IST
+  GRACE_MINUTES: 15,          // Grace up to 09:45 AM
+  MIN_HALF_DAY_MINUTES: 240,  // 4 hours minimum for half day
+  MIN_FULL_DAY_MINUTES: 480,  // 8 hours minimum for full day
+  MAX_DAILY_HOURS: 9,         // Standard 9 hours workday
+  TIMEZONE: 'Asia/Kolkata',   // Indian Standard Time (IST)
+});
+
+// ── Attendance Regularization ───────────────────────────────────
+export const REGULARIZATION_STATUS = Object.freeze({
+  PENDING:  'pending',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+});
+
+export const REGULARIZATION_REASONS = [
+  { id: 'biometric_glitch', label: 'Biometric / App Device Glitch' },
+  { id: 'forgot_punch', label: 'Forgot to Punch In / Out' },
+  { id: 'client_visit', label: 'Client Site Visit / Field Duty' },
+  { id: 'power_network_issue', label: 'Power / Internet Connectivity Outage' },
+  { id: 'medical_emergency', label: 'Emergency / Late Commute' },
+];
 
 // ── Leave Balance Defaults ──────────────────────────────────────
 export const DEFAULT_LEAVE_QUOTA = Object.freeze({
@@ -73,4 +116,6 @@ export const ATTENDANCE_COLORS = Object.freeze({
   [ATTENDANCE_STATUS.ABSENT]:   { bg: '#fee2e2', text: '#991b1b' },
   [ATTENDANCE_STATUS.HALF_DAY]: { bg: '#fef3c7', text: '#92400e' },
   [ATTENDANCE_STATUS.LEAVE]:    { bg: '#dbeafe', text: '#1e40af' },
+  [ATTENDANCE_STATUS.HOLIDAY]:  { bg: '#f3e8ff', text: '#6b21a8' },
+  [ATTENDANCE_STATUS.WEEKEND]:  { bg: '#f1f5f9', text: '#475569' },
 });
