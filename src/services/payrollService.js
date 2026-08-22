@@ -85,25 +85,29 @@ export const payrollService = {
   /**
    * Get salary profile for an employee
    */
+  getMockEmployeeSalaryProfile(userId) {
+    const user = mockUsers.find(u => u.id === userId || u.employee_id === userId) || mockUsers[0];
+    const monthly = user ? (user.salary ? Math.round(user.salary / 12) : 100000) : 100000;
+    const breakdown = calculateSalaryBreakdown(monthly, DEFAULT_SALARY_COMPONENTS, STATUTORY_CONFIG);
+    return {
+      data: {
+        user_id: userId,
+        wage_type: 'Fixed Wage',
+        monthly_wage: monthly,
+        yearly_wage: monthly * 12,
+        working_days_per_week: 5,
+        break_time_mins: 60,
+        statutory: STATUTORY_CONFIG,
+        components: DEFAULT_SALARY_COMPONENTS,
+        breakdown
+      },
+      error: null
+    };
+  },
+
   async getEmployeeSalaryProfile(userId) {
     if (IS_MOCK) {
-      const user = mockUsers.find(u => u.id === userId || u.employee_id === userId);
-      const monthly = user?.salary ? Math.round(user.salary / 12) : 250000;
-      const breakdown = calculateSalaryBreakdown(monthly);
-      return {
-        data: {
-          user_id: userId,
-          wage_type: 'Fixed Wage',
-          monthly_wage: monthly,
-          yearly_wage: monthly * 12,
-          working_days_per_week: 5,
-          break_time_mins: 60,
-          statutory: STATUTORY_CONFIG,
-          components: DEFAULT_SALARY_COMPONENTS,
-          breakdown
-        },
-        error: null
-      };
+      return this.getMockEmployeeSalaryProfile(userId);
     }
 
     try {
@@ -114,12 +118,12 @@ export const payrollService = {
         .single();
 
       if (error || !data) {
-        return this.getEmployeeSalaryProfile(userId);
+        return this.getMockEmployeeSalaryProfile(userId);
       }
       const breakdown = calculateSalaryBreakdown(data.monthly_wage, data.components || DEFAULT_SALARY_COMPONENTS);
       return { data: { ...data, breakdown }, error: null };
     } catch (e) {
-      return this.getEmployeeSalaryProfile(userId);
+      return this.getMockEmployeeSalaryProfile(userId);
     }
   },
 
