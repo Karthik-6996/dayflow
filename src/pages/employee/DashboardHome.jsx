@@ -169,10 +169,10 @@ export const DashboardHome = () => {
           icon={CalendarDays}
         />
         <StatCard
-          title="Net Salary"
-          value={payroll ? `₹${(payroll.monthly_net || Math.round(Number(payroll.net_salary || 900000) / 12)).toLocaleString()}` : '₹65,000'}
-          subtitle={`Annual CTC ₹${(payroll?.base_salary || 900000).toLocaleString()}`}
-          icon={CreditCard}
+          title="Shift Schedule"
+          value="09:30 - 18:30"
+          subtitle="General Shift (IST) • Mon-Fri"
+          icon={Building}
         />
         <StatCard
           title="Pending Requests"
