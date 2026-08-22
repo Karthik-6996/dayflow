@@ -25,6 +25,7 @@ export const Sidebar = ({ mobileOpen, setMobileOpen }) => {
     { name: 'Attendance', to: '/dashboard/attendance', icon: CalendarCheck },
     { name: 'Leave Requests', to: '/dashboard/leaves', icon: CalendarDays },
     { name: 'My Payroll', to: '/dashboard/payroll', icon: CreditCard },
+    { name: 'Reports & Slips', to: '/dashboard/reports', icon: FileText },
     { name: 'My Profile', to: '/dashboard/profile', icon: User },
   ];
 
@@ -33,6 +34,7 @@ export const Sidebar = ({ mobileOpen, setMobileOpen }) => {
     { name: 'All Attendance', to: '/dashboard/admin/attendance', icon: ClipboardList },
     { name: 'Leave Approvals', to: '/dashboard/admin/leaves', icon: ShieldCheck },
     { name: 'Payroll Operations', to: '/dashboard/admin/payroll', icon: IndianRupee },
+    { name: 'Reports & Analytics', to: '/dashboard/admin/reports', icon: BarChart3 },
   ];
 
   return (
