@@ -176,39 +176,77 @@ export const payrollService = {
   },
 
   async getAllPayroll() {
-    // Get list of removed user IDs from localStorage if available
-    let removedIds = [];
+    if (IS_MOCK) {
+      // Get list of removed user IDs from localStorage if available
+      let removedIds = [];
+      try {
+        const stored = localStorage.getItem('dayflow_removed_payroll_ids');
+        if (stored) removedIds = JSON.parse(stored);
+      } catch (e) {}
+
+      const activeEmployees = mockUsers.filter(u =>
+        u.role === 'employee' && !removedIds.includes(u.id) && !removedIds.includes(u.employee_id)
+      );
+
+      const list = activeEmployees.map(user => {
+        const monthly = user.salary ? Math.round(user.salary / 12) : 100000;
+        const b = calculateSalaryBreakdown(monthly);
+        return {
+          user_id: user.id,
+          users: {
+            id: user.id,
+            name: user.name,
+            department: user.department,
+            employee_id: user.employee_id,
+            email: user.email,
+            job_title: user.job_title
+          },
+          base_salary: monthly * 12,
+          deductions: b.totalDeductions * 12,
+          net_salary: b.netTakeHome * 12,
+          monthly_net: b.netTakeHome,
+          breakdown: b
+        };
+      });
+      return { data: list, error: null };
+    }
+
     try {
-      const stored = localStorage.getItem('dayflow_removed_payroll_ids');
-      if (stored) removedIds = JSON.parse(stored);
-    } catch (e) {}
+      const { data: users, error } = await supabase
+        .from('users')
+        .select('*, salary_profiles(*)')
+        .eq('role', 'employee')
+        .order('name');
 
-    // Only include employee roles (not system admins) and filter out explicitly removed/unwanted employees
-    const activeEmployees = mockUsers.filter(u =>
-      u.role === 'employee' && !removedIds.includes(u.id) && !removedIds.includes(u.employee_id)
-    );
+      if (error) throw error;
 
-    const list = activeEmployees.map(user => {
-      const monthly = user.salary ? Math.round(user.salary / 12) : 100000;
-      const b = calculateSalaryBreakdown(monthly);
-      return {
-        user_id: user.id,
-        users: {
-          id: user.id,
-          name: user.name,
-          department: user.department,
-          employee_id: user.employee_id,
-          email: user.email,
-          job_title: user.job_title
-        },
-        base_salary: monthly * 12,
-        deductions: b.totalDeductions * 12,
-        net_salary: b.netTakeHome * 12,
-        monthly_net: b.netTakeHome,
-        breakdown: b
-      };
-    });
-    return { data: list, error: null };
+      const list = (users || []).map(user => {
+        const profile = user.salary_profiles?.[0] || user.salary_profiles || {};
+        const monthly = profile.monthly_wage ? Number(profile.monthly_wage) : (user.salary ? Math.round(Number(user.salary) / 12) : 75000);
+        const b = calculateSalaryBreakdown(monthly, profile.components || DEFAULT_SALARY_COMPONENTS, profile.statutory || STATUTORY_CONFIG);
+        return {
+          user_id: user.id,
+          users: {
+            id: user.id,
+            name: user.name,
+            department: user.department,
+            employee_id: user.employee_id,
+            email: user.email,
+            job_title: user.job_title
+          },
+          base_salary: monthly * 12,
+          deductions: b.totalDeductions * 12,
+          net_salary: b.netTakeHome * 12,
+          monthly_net: b.netTakeHome,
+          breakdown: b
+        };
+      });
+
+      return { data: list, error: null };
+    } catch (err) {
+      console.warn("Supabase getAllPayroll error:", err);
+      return { data: [], error: err.message };
+    }
   },
 
   async removeEmployeeFromPayroll(userId) {
