@@ -27,6 +27,7 @@ import { format, differenceInMinutes, parseISO, startOfMonth, endOfMonth, eachDa
 import { toast } from 'sonner';
 import { WORK_MODES, WORK_MODE_LABELS, REGULARIZATION_REASONS } from '../../lib/constants';
 import { getIndianHoliday, isWeekend, getUpcomingIndianHolidays } from '../../lib/indianHolidays';
+import { GoogleWorkspaceCalendar } from '../../components/calendar/GoogleWorkspaceCalendar';
 
 export const AttendancePage = () => {
   const { currentUser } = useAuth();
@@ -617,108 +618,15 @@ export const AttendancePage = () => {
         </button>
       </div>
 
-      {/* TAB 1: Monthly Attendance Matrix Calendar */}
+      {/* TAB 1: Google Workspace Monthly Matrix & Schedule Calendar */}
       {activeTab === 'calendar' && (
-        <Card className="p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-            <div>
-              <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                {format(currentMonthDate, 'MMMM yyyy')} Attendance & Holiday Roster
-              </h3>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                Mon–Fri working days, Sat–Sun weekly off, and scheduled holidays
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3 text-[11px] text-zinc-600 dark:text-zinc-400">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Present</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> Half-Day/Late</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-indigo-500" /> Leave</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-zinc-300 dark:bg-zinc-700" /> Off</span>
-            </div>
-          </div>
-
-          {/* Calendar Grid */}
-          <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
-            {/* Days Header */}
-            <div className="grid grid-cols-7 bg-zinc-50 dark:bg-zinc-800/60 border-b border-zinc-200 dark:border-zinc-800 text-center py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-              <span>Mon</span>
-              <span>Tue</span>
-              <span>Wed</span>
-              <span>Thu</span>
-              <span>Fri</span>
-              <span className="text-zinc-400">Sat</span>
-              <span className="text-zinc-400">Sun</span>
-            </div>
-
-            {/* Day Cells */}
-            <div className="grid grid-cols-7 divide-x divide-y divide-zinc-200 dark:divide-zinc-800 bg-white dark:bg-zinc-900">
-              {Array.from({ length: startDayOffset }).map((_, i) => (
-                <div key={`empty-${i}`} className="min-h-[85px] bg-zinc-50/50 dark:bg-zinc-950/30 p-2" />
-              ))}
-
-              {daysInMonth.map((dayObj) => {
-                const dateStr = format(dayObj, 'yyyy-MM-dd');
-                const isWknd = isWeekend(dayObj);
-                const holiday = getIndianHoliday(dateStr);
-                const record = attendanceRecords.find(a => a.date === dateStr);
-                const isToday = dateStr === todayStr;
-                const isFutureDate = dateStr > todayStr;
-
-                return (
-                  <div
-                    key={dateStr}
-                    className={`min-h-[85px] p-2 transition-all relative flex flex-col justify-between ${
-                      isToday ? 'bg-zinc-100 dark:bg-zinc-800/80 font-bold' : isWknd ? 'bg-zinc-50/50 dark:bg-zinc-950/40' : ''
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className={`text-xs font-semibold ${
-                        isToday ? 'px-1.5 py-0.2 rounded bg-zinc-900 dark:bg-white text-white dark:text-zinc-900' : isWknd ? 'text-zinc-400' : 'text-zinc-800 dark:text-zinc-200'
-                      }`}>
-                        {format(dayObj, 'd')}
-                      </span>
-
-                      {holiday && (
-                        <span className="text-[9px] px-1.5 py-0.2 rounded font-semibold bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 truncate max-w-[65px]" title={holiday.name}>
-                          Holiday
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="mt-1">
-                      {holiday ? (
-                        <div className="text-[10px] font-semibold text-purple-600 dark:text-purple-400 leading-tight truncate">
-                          {holiday.name}
-                        </div>
-                      ) : record ? (
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-1">
-                            <span className={`w-1.5 h-1.5 rounded-full ${
-                              record.status === 'present' ? 'bg-emerald-500' : record.status === 'half-day' ? 'bg-amber-500' : 'bg-indigo-500'
-                            }`} />
-                            <span className="text-[10px] font-semibold text-zinc-900 dark:text-zinc-100 capitalize">
-                              {record.status}
-                            </span>
-                          </div>
-                          {record.check_in_time && (
-                            <p className="text-[9px] text-zinc-500 dark:text-zinc-400 font-mono">
-                              {format(parseISO(record.check_in_time), 'hh:mm')}
-                            </p>
-                          )}
-                        </div>
-                      ) : isWknd ? (
-                        <span className="text-[10px] text-zinc-400">Off</span>
-                      ) : (
-                        <span className="text-[10px] text-zinc-400 italic">No log</span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </Card>
+        <GoogleWorkspaceCalendar
+          records={attendanceRecords}
+          onRequestRegularization={(dateStr) => {
+            setSelectedLogForReg({ date: dateStr });
+            setIsRegModalOpen(true);
+          }}
+        />
       )}
 
       {/* TAB 2: Detailed Attendance Logs Table */}
