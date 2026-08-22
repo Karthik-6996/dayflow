@@ -26,11 +26,13 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { mockUsers } from '../../mocks/users';
+
 export const EmployeeDirectory = () => {
-  const [employees, setEmployees] = useState([]);
+  const [employees, setEmployees] = useState(mockUsers || []);
   const [attendances, setAttendances] = useState([]);
   const [leaves, setLeaves] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [deptFilter, setDeptFilter] = useState('all');
   const [selectedUser, setSelectedUser] = useState(null);
@@ -52,16 +54,19 @@ export const EmployeeDirectory = () => {
   });
 
   const loadAllData = async () => {
-    setLoading(true);
     try {
       const [usersRes, attRes, leavesRes] = await Promise.all([
         userService.getAllUsers(),
         attendanceService.getAllAttendance({ dateFilter: new Date().toISOString().split('T')[0] }),
         leaveService.getAllLeaves()
       ]);
-      setEmployees(usersRes.data || []);
+      if (usersRes.data && usersRes.data.length > 0) {
+        setEmployees(usersRes.data);
+      }
       setAttendances(attRes.data || []);
       setLeaves(leavesRes.data || []);
+    } catch (e) {
+      console.warn("Background directory refresh:", e);
     } finally {
       setLoading(false);
     }
