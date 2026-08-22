@@ -55,8 +55,6 @@ export const AttendancePage = () => {
     remarks: ''
   });
 
-  const currentMonthDate = new Date(selectedYear, selectedMonth, 1);
-
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
