@@ -7,36 +7,37 @@ import {
   Lock,
   Mail,
   User,
-  Building,
-  Phone,
+  Shield,
   Layers,
   Sun,
   Moon,
-  Upload,
   Check,
   X,
   Eye,
-  EyeOff
+  EyeOff,
+  Briefcase
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export const SignupPage = () => {
   const navigate = useNavigate();
+  const { register } = useAuth();
   const { isDark, toggleTheme } = useTheme();
+  
   const [formData, setFormData] = useState({
-    companyName: '',
-    name: '',
+    employee_id: '',
     email: '',
-    phone: '',
+    name: '',
+    role: 'employee', // 'employee' | 'admin' (HR)
     password: '',
-    confirmPassword: '',
-    logoUrl: ''
+    confirmPassword: ''
   });
+  
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Password requirements
+  // Security password rules
   const password = formData.password;
   const hasMinLength = password.length >= 8;
   const hasNumber = /\d/.test(password);
@@ -49,40 +50,33 @@ export const SignupPage = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleLogoUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData(prev => ({ ...prev, logoUrl: reader.result }));
-        toast.success("Company logo uploaded!");
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
     if (!isPasswordValid) {
-      setError('Please ensure password matches criteria and confirmation.');
+      setError('Please satisfy all password security criteria.');
       return;
     }
 
     setLoading(true);
     try {
-      // Register company & initial admin
-      localStorage.setItem('dayflow_company', JSON.stringify({
-        name: formData.companyName,
-        logo: formData.logoUrl || null,
-        created_at: new Date().toISOString()
-      }));
+      const result = await register({
+        employee_id: formData.employee_id.trim() || `DF-${Math.floor(1000 + Math.random() * 9000)}`,
+        email: formData.email.trim().toLowerCase(),
+        name: formData.name.trim() || formData.email.split('@')[0],
+        role: formData.role, // Employee or HR / Admin
+        password: formData.password
+      });
 
-      toast.success(`Company ${formData.companyName} registered! Please sign in with your Admin credentials.`);
-      navigate('/login');
+      if (result?.needsEmailVerification) {
+        navigate('/verify-email', { state: { email: formData.email } });
+      } else {
+        toast.success(`Account registered for ${formData.email}! Redirecting...`);
+        navigate('/login');
+      }
     } catch (err) {
-      setError(err.message || 'Failed to create company account');
+      setError(err.message || 'Registration failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -90,7 +84,7 @@ export const SignupPage = () => {
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 relative text-zinc-900 dark:text-zinc-100 transition-colors">
-      {/* Top right theme toggle */}
+      {/* Theme Toggle */}
       <div className="absolute top-4 right-4">
         <button
           onClick={toggleTheme}
@@ -106,14 +100,14 @@ export const SignupPage = () => {
           <Layers className="w-5 h-5" />
         </div>
         <h2 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-white">
-          Company Registration
+          Create Dayflow Account
         </h2>
-        <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
-          Register your organization and establish initial Administrator access
+        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          Register with your Employee ID, Email, Role, and Security Credentials
         </p>
       </div>
 
-      <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-lg">
+      <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white dark:bg-zinc-900 py-8 px-6 sm:px-8 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm">
           <form onSubmit={handleSubmit} className="space-y-4 text-xs">
             {error && (
@@ -122,172 +116,174 @@ export const SignupPage = () => {
               </div>
             )}
 
-            {/* Company Details */}
-            <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-700 space-y-3">
-              <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">
-                1. Organization Information
-              </span>
-
-              <div>
-                <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Company Name *
-                </label>
-                <div className="relative">
-                  <Building className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    required
-                    name="companyName"
-                    value={formData.companyName}
-                    onChange={handleChange}
-                    placeholder="e.g. Acme Innovations Inc."
-                    className="w-full pl-9 pr-3 py-2 text-xs rounded-lg bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Company Logo Upload
-                </label>
-                <label className="flex items-center gap-2 px-3 py-2 border border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800/60 transition">
-                  <Upload className="w-4 h-4 text-zinc-400" />
-                  <span className="text-zinc-500 text-xs truncate">{formData.logoUrl ? 'Logo Attached ✓' : 'Upload PNG / SVG Logo'}</span>
-                  <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
-                </label>
+            {/* Employee ID */}
+            <div>
+              <label className="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                Employee ID *
+              </label>
+              <div className="relative">
+                <Briefcase className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  required
+                  name="employee_id"
+                  value={formData.employee_id}
+                  onChange={handleChange}
+                  placeholder="e.g. DF-1001 or OIJODO20260001"
+                  className="w-full pl-9 pr-3 py-2 text-xs rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-600 transition"
+                />
               </div>
             </div>
 
-            {/* Admin User Details */}
-            <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-700 space-y-3">
-              <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">
-                2. Primary Administrator Account
-              </span>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Admin Full Name *
-                  </label>
-                  <div className="relative">
-                    <User className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      required
-                      name="name"
-                      value={formData.name}
-                      onChange={handleChange}
-                      placeholder="e.g. Elena Rostova"
-                      className="w-full pl-9 pr-3 py-2 text-xs rounded-lg bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Phone Number
-                  </label>
-                  <div className="relative">
-                    <Phone className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      name="phone"
-                      value={formData.phone}
-                      onChange={handleChange}
-                      placeholder="+1 (555) 000-0000"
-                      className="w-full pl-9 pr-3 py-2 text-xs rounded-lg bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400"
-                    />
-                  </div>
-                </div>
+            {/* Full Name */}
+            <div>
+              <label className="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                Full Name *
+              </label>
+              <div className="relative">
+                <User className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  required
+                  name="name"
+                  value={formData.name}
+                  onChange={handleChange}
+                  placeholder="e.g. Sarah Jenkins"
+                  className="w-full pl-9 pr-3 py-2 text-xs rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-600 transition"
+                />
               </div>
+            </div>
 
-              <div>
-                <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Work Email *
-                </label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="email"
-                    required
-                    name="email"
-                    value={formData.email}
-                    onChange={handleChange}
-                    placeholder="admin@company.com"
-                    className="w-full pl-9 pr-3 py-2 text-xs rounded-lg bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400"
-                  />
-                </div>
+            {/* Email Address */}
+            <div>
+              <label className="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                Email Address *
+              </label>
+              <div className="relative">
+                <Mail className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="email"
+                  required
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  placeholder="name@company.com"
+                  className="w-full pl-9 pr-3 py-2 text-xs rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-600 transition"
+                />
               </div>
+            </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Password *
-                  </label>
-                  <div className="relative">
-                    <Lock className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      required
-                      name="password"
-                      value={formData.password}
-                      onChange={handleChange}
-                      placeholder="••••••••"
-                      className="w-full pl-9 pr-8 py-2 text-xs rounded-lg bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-zinc-400"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400"
-                    >
-                      {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Confirm Password *
-                  </label>
-                  <div className="relative">
-                    <Lock className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      required
-                      name="confirmPassword"
-                      value={formData.confirmPassword}
-                      onChange={handleChange}
-                      placeholder="••••••••"
-                      className="w-full pl-9 pr-3 py-2 text-xs rounded-lg bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-zinc-400"
-                    />
-                  </div>
-                </div>
+            {/* Role Selection: Employee / HR */}
+            <div>
+              <label className="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                Role Assignment *
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, role: 'employee' })}
+                  className={`py-2 px-3 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    formData.role === 'employee'
+                      ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 border-zinc-900 dark:border-white shadow-xs'
+                      : 'bg-zinc-50 dark:bg-zinc-800/60 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <User className="w-3.5 h-3.5" /> Employee
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, role: 'admin' })}
+                  className={`py-2 px-3 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    formData.role === 'admin'
+                      ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 border-zinc-900 dark:border-white shadow-xs'
+                      : 'bg-zinc-50 dark:bg-zinc-800/60 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <Shield className="w-3.5 h-3.5" /> HR / Admin
+                </button>
               </div>
+            </div>
 
-              {/* Live Password Checklist */}
-              <div className="p-2.5 rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-1 text-[11px]">
-                <div className={`flex items-center gap-1.5 ${hasMinLength ? 'text-emerald-600 font-medium' : 'text-zinc-500'}`}>
-                  {hasMinLength ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
-                  <span>8+ characters</span>
-                </div>
-                <div className={`flex items-center gap-1.5 ${passwordsMatch ? 'text-emerald-600 font-medium' : 'text-zinc-500'}`}>
-                  {passwordsMatch ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
-                  <span>Passwords match</span>
-                </div>
+            {/* Password */}
+            <div>
+              <label className="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                Password *
+              </label>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  name="password"
+                  value={formData.password}
+                  onChange={handleChange}
+                  placeholder="••••••••"
+                  className="w-full pl-9 pr-9 py-2 text-xs rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-600 transition"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Confirm Password */}
+            <div>
+              <label className="block font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                Confirm Password *
+              </label>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  name="confirmPassword"
+                  value={formData.confirmPassword}
+                  onChange={handleChange}
+                  placeholder="••••••••"
+                  className="w-full pl-9 pr-9 py-2 text-xs rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-600 transition"
+                />
+              </div>
+            </div>
+
+            {/* Live Security Password Rules Checklist */}
+            <div className="p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 space-y-1 text-[11px]">
+              <div className={`flex items-center gap-1.5 ${hasMinLength ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-zinc-500'}`}>
+                {hasMinLength ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                <span>At least 8 characters</span>
+              </div>
+              <div className={`flex items-center gap-1.5 ${hasUppercase ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-zinc-500'}`}>
+                {hasUppercase ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                <span>At least 1 uppercase letter (A-Z)</span>
+              </div>
+              <div className={`flex items-center gap-1.5 ${hasNumber ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-zinc-500'}`}>
+                {hasNumber ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                <span>At least 1 number (0-9)</span>
+              </div>
+              <div className={`flex items-center gap-1.5 ${hasSpecialChar ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-zinc-500'}`}>
+                {hasSpecialChar ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                <span>At least 1 special character (!@#$...)</span>
+              </div>
+              <div className={`flex items-center gap-1.5 ${passwordsMatch ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-zinc-500'}`}>
+                {passwordsMatch ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                <span>Passwords match</span>
               </div>
             </div>
 
             <button
               type="submit"
               disabled={loading || !isPasswordValid}
-              className="w-full py-2.5 px-4 rounded-lg bg-zinc-900 dark:bg-white hover:bg-zinc-800 dark:hover:bg-zinc-100 text-white dark:text-zinc-900 font-semibold text-xs transition shadow-xs disabled:opacity-50 cursor-pointer"
+              className="w-full mt-2 py-2.5 px-4 rounded-lg bg-zinc-900 dark:bg-white hover:bg-zinc-800 dark:hover:bg-zinc-100 text-white dark:text-zinc-900 font-semibold text-xs transition shadow-xs disabled:opacity-50 cursor-pointer"
             >
-              {loading ? 'Registering Company...' : 'Register Company & Admin Account'}
+              {loading ? 'Creating Account...' : 'Sign Up'}
             </button>
           </form>
 
-          <div className="mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-800 text-center">
-            <p className="text-xs text-zinc-600 dark:text-zinc-400">
+          <div className="mt-6 pt-5 border-t border-zinc-100 dark:border-zinc-800 text-center">
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
               Already have an account?{' '}
               <Link to="/login" className="font-semibold text-zinc-900 dark:text-white hover:underline">
                 Sign In

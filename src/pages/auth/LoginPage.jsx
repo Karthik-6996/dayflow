@@ -200,7 +200,7 @@ export const LoginPage = () => {
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
               Don't have an Account?{' '}
               <Link to="/signup" className="font-semibold text-zinc-900 dark:text-white hover:underline">
-                Sign Up Company
+                Sign Up
               </Link>
             </p>
           </div>
