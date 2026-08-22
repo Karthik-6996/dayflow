@@ -50,7 +50,7 @@ export const LeavesPage = () => {
     setLoading(true);
     try {
       const [leavesRes, balRes] = await Promise.all([
-        isAdmin ? leaveService.getAllLeaves() : leaveService.getEmployeeLeaves(currentUser.id),
+        leaveService.getEmployeeLeaves(currentUser.id),
         leaveService.getLeaveBalances(currentUser.id)
       ]);
       setLeaves(leavesRes.data || []);

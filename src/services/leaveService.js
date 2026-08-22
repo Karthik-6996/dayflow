@@ -86,10 +86,10 @@ export async function getEmployeeLeaves(userId) {
       .order('start_date', { ascending: false });
 
     if (error) throw error;
-    if (data && data.length > 0) return { data, error: null };
-    return { data: getMockEmployeeLeaves(userId), error: null };
+    return { data: data || [], error: null };
   } catch (err) {
-    return { data: getMockEmployeeLeaves(userId), error: null };
+    console.warn("Supabase getEmployeeLeaves:", err);
+    return { data: [], error: err.message };
   }
 }
 
@@ -141,10 +141,10 @@ export async function getAllLeaves({ statusFilter, typeFilter, status, userId } 
 
     const { data, error } = await query;
     if (error) throw error;
-    if (data && data.length > 0) return { data, error: null };
-    return { data: getMockAdminLeaves(), error: null };
+    return { data: data || [], error: null };
   } catch (err) {
-    return { data: getMockAdminLeaves(), error: null };
+    console.warn("Supabase getAllLeaves:", err);
+    return { data: [], error: err.message };
   }
 }
 
