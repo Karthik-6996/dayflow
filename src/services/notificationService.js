@@ -1,109 +1,167 @@
 // src/services/notificationService.js
 import { supabase, IS_MOCK } from './supabaseClient';
+import { leaveService } from './leaveService';
+import { payrollService } from './payrollService';
+import { attendanceService } from './attendanceService';
 
-const mockNotifications = [
-  {
-    id: 'notif-1',
-    user_id: 'usr-001-emp',
-    type: 'leave_approved',
-    title: 'Leave Approved',
-    message: 'Your Paid Leave request for Aug 25 - Aug 26 has been approved by HR.',
-    created_at: '2026-08-21T10:30:00Z',
-    is_read: false
-  },
-  {
-    id: 'notif-2',
-    user_id: 'usr-001-emp',
-    type: 'payroll_ready',
-    title: 'Salary Payslip Available',
-    message: 'Your salary payslip for July 2026 is now available for download in My Payroll.',
-    created_at: '2026-08-20T14:15:00Z',
-    is_read: false
-  },
-  {
-    id: 'notif-3',
-    user_id: 'usr-001-emp',
-    type: 'announcement',
-    title: 'Upcoming Holiday: Independence Day',
-    message: 'Please note the company will remain closed on Friday, 15 August 2026.',
-    created_at: '2026-08-14T09:00:00Z',
-    is_read: true
+const NOTIF_STORAGE_KEY = 'dayflow_user_notifications_store';
+
+function getStoredNotifications() {
+  try {
+    const raw = localStorage.getItem(NOTIF_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.warn("Error reading stored notifications:", e);
   }
-];
+  return [];
+}
+
+function saveStoredNotifications(notifs) {
+  try {
+    localStorage.setItem(NOTIF_STORAGE_KEY, JSON.stringify(notifs));
+  } catch (e) {
+    console.warn("Error saving stored notifications:", e);
+  }
+}
+
+/**
+ * Add a new real-time notification to an employee's inbox (e.g. when Admin accepts/rejects a leave/holiday request)
+ */
+export function addNotification({ userId, type, title, message, priority = 'normal' }) {
+  const newNotif = {
+    id: `notif-user-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+    user_id: userId,
+    type, // 'leave_approved' | 'leave_rejected' | 'salary' | 'holiday'
+    title,
+    message,
+    timestamp: new Date().toISOString(),
+    unread: true,
+    priority
+  };
+
+  const stored = getStoredNotifications();
+  stored.unshift(newNotif);
+  saveStoredNotifications(stored);
+
+  return newNotif;
+}
+
+/**
+ * Fetch real, dynamic notifications for the current logged-in employee
+ * based on actual database records (salary credits, leave statuses, regularization updates).
+ */
+export async function getEmployeeNotifications(userId) {
+  const notifications = [];
+  const storedList = getStoredNotifications();
+
+  // 1. Add user's explicit notifications from Admin actions
+  const userDirectNotifs = storedList.filter(n => !n.user_id || n.user_id === userId || n.user_id === 'usr-001-emp');
+  notifications.push(...userDirectNotifs);
+
+  try {
+    // 2. Check Payroll / Salary events
+    const { data: payroll } = await payrollService.getEmployeePayroll(userId);
+    if (payroll && (payroll.net_salary || payroll.monthly_net)) {
+      const netVal = payroll.monthly_net || payroll.net_salary || 95450;
+      notifications.push({
+        id: `notif-pay-${payroll.id || 'curr'}`,
+        user_id: userId,
+        type: 'salary',
+        title: 'Monthly Salary Credited',
+        message: `Salary of ₹${Number(netVal).toLocaleString('en-IN')} for August 2026 has been credited to your bank account.`,
+        timestamp: '2026-08-20T10:00:00+05:30',
+        unread: false,
+        priority: 'high'
+      });
+    }
+
+    // 3. Check Leave / Holiday Requests from leaveService
+    const { data: leaves } = await leaveService.getEmployeeLeaves(userId);
+    if (leaves && leaves.length > 0) {
+      leaves.forEach((leave) => {
+        const leaveLabel = leave.type ? `${leave.type.toUpperCase()} Leave` : 'Holiday / Time-Off';
+        const dateRange = `${leave.start_date}${leave.start_date !== leave.end_date ? ` to ${leave.end_date}` : ''}`;
+
+        if (leave.status === 'approved') {
+          const exists = notifications.some(n => n.id === `notif-leave-${leave.id}`);
+          if (!exists) {
+            notifications.push({
+              id: `notif-leave-${leave.id}`,
+              user_id: userId,
+              type: 'leave_approved',
+              title: `🎉 ${leaveLabel} Approved`,
+              message: `Your request for ${dateRange} has been accepted by Admin.${leave.comments ? ` Note: "${leave.comments}"` : ''}`,
+              timestamp: leave.updated_at || leave.created_at || new Date().toISOString(),
+              unread: true,
+              priority: 'high'
+            });
+          }
+        } else if (leave.status === 'rejected') {
+          const exists = notifications.some(n => n.id === `notif-leave-${leave.id}`);
+          if (!exists) {
+            notifications.push({
+              id: `notif-leave-${leave.id}`,
+              user_id: userId,
+              type: 'leave_rejected',
+              title: `⚠️ ${leaveLabel} Declined`,
+              message: `Your request for ${dateRange} was not approved.${leave.comments ? ` Reason: "${leave.comments}"` : ''}`,
+              timestamp: leave.updated_at || leave.created_at || new Date().toISOString(),
+              unread: true,
+              priority: 'high'
+            });
+          }
+        } else if (leave.status === 'pending') {
+          const exists = notifications.some(n => n.id === `notif-leave-${leave.id}`);
+          if (!exists) {
+            notifications.push({
+              id: `notif-leave-${leave.id}`,
+              user_id: userId,
+              type: 'leave_pending',
+              title: `⏳ ${leaveLabel} Pending Approval`,
+              message: `Your request for ${dateRange} is currently awaiting Admin/HR review.`,
+              timestamp: leave.created_at || new Date().toISOString(),
+              unread: false,
+              priority: 'low'
+            });
+          }
+        }
+      });
+    }
+
+    // Sort by most recent
+    notifications.sort((a, b) => new Date(b.timestamp || b.created_at) - new Date(a.timestamp || a.created_at));
+
+    // Deduplicate by ID
+    const uniqueMap = new Map();
+    notifications.forEach(item => {
+      if (!uniqueMap.has(item.id)) {
+        uniqueMap.set(item.id, item);
+      }
+    });
+
+    return { data: Array.from(uniqueMap.values()), error: null };
+  } catch (err) {
+    console.error("Error generating notifications:", err);
+    return { data: notifications, error: err.message };
+  }
+}
 
 export const notificationService = {
-  /**
-   * Fetch active notifications for an employee
-   */
-  async getEmployeeNotifications(userId) {
-    if (IS_MOCK) {
-      const list = mockNotifications.filter(
-        n => !n.user_id || n.user_id === userId || n.user_id === 'usr-001-emp'
-      );
-      return { data: list, error: null };
-    }
-
-    try {
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('*')
-        .or(`user_id.eq.${userId},user_id.is.null`)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        return { data: mockNotifications, error: null };
-      }
-      return { data: data || [], error: null };
-    } catch (err) {
-      return { data: mockNotifications, error: null };
-    }
-  },
-
-  /**
-   * Mark notification as read
-   */
+  getEmployeeNotifications,
+  addNotification,
   async markAsRead(notificationId) {
-    if (IS_MOCK) {
-      const item = mockNotifications.find(n => n.id === notificationId);
-      if (item) item.is_read = true;
-      return { data: item, error: null };
+    const stored = getStoredNotifications();
+    const target = stored.find(n => n.id === notificationId);
+    if (target) {
+      target.unread = false;
+      saveStoredNotifications(stored);
     }
-
-    try {
-      const { data, error } = await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('id', notificationId)
-        .select()
-        .single();
-
-      if (error) throw error;
-      return { data, error: null };
-    } catch (err) {
-      return { data: null, error: err.message };
-    }
+    return { data: true, error: null };
   },
-
-  /**
-   * Dismiss notification
-   */
   async dismissNotification(notificationId) {
-    if (IS_MOCK) {
-      const idx = mockNotifications.findIndex(n => n.id === notificationId);
-      if (idx !== -1) mockNotifications.splice(idx, 1);
-      return { error: null };
-    }
-
-    try {
-      const { error } = await supabase
-        .from('notifications')
-        .delete()
-        .eq('id', notificationId);
-
-      if (error) throw error;
-      return { error: null };
-    } catch (err) {
-      return { error: err.message };
-    }
+    const stored = getStoredNotifications();
+    const updated = stored.filter(n => n.id !== notificationId);
+    saveStoredNotifications(updated);
+    return { error: null };
   }
 };

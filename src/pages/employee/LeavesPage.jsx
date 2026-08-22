@@ -99,6 +99,10 @@ export const LeavesPage = () => {
         toast.error(error);
       } else {
         toast.success("Leave request submitted successfully!");
+        if (data) {
+          setLeaves(prev => [data, ...prev.filter(p => p.id !== data.id)]);
+        }
+        setStatusFilter('all'); // Show all requests so new pending request is instantly visible
         setIsModalOpen(false);
         setFormData({ type: 'paid', startDate: '', endDate: '', remarks: '' });
         await loadLeavesData();
